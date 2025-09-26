@@ -10,10 +10,17 @@ interface StoryDisplayProps {
   onReset: () => void;
 }
 
+const isMobile = () => {
+    return window.innerWidth <= 768 || 
+           /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
 const PDF_OPTIONS = {
-    scale: 2,
+    scale: isMobile() ? 1.5 : 2, // Scala ridotta per dispositivi mobili
     useCORS: true,
-    backgroundColor: '#ffffff' // Use white background for PDFs
+    backgroundColor: '#ffffff', // Use white background for PDFs
+    windowWidth: undefined, // Sarà impostato dinamicamente
+    windowHeight: undefined // Sarà impostato dinamicamente
 };
 
 const generatePdf = async (element: HTMLElement, filename: string) => {
@@ -23,7 +30,14 @@ const generatePdf = async (element: HTMLElement, filename: string) => {
     element.parentElement!.style.position = 'relative';
     element.parentElement!.style.left = '0';
 
-    const canvas = await html2canvas(element, PDF_OPTIONS);
+    // Imposta le dimensioni della finestra per il rendering
+    const options = {
+        ...PDF_OPTIONS,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight
+    };
+
+    const canvas = await html2canvas(element, options);
     
     // Hide the element again
     element.parentElement!.style.position = 'absolute';
@@ -38,7 +52,15 @@ const generatePdf = async (element: HTMLElement, filename: string) => {
     });
 
     pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-    pdf.save(filename);
+    
+    // Per dispositivi mobili, apri il PDF in una nuova scheda invece di scaricarlo direttamente
+    if (isMobile()) {
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        window.open(pdfUrl, '_blank');
+    } else {
+        pdf.save(filename);
+    }
 };
 
 const StoryDisplay: React.FC<{story: StoryData, onReset: () => void}> = ({ story, onReset }) => {
