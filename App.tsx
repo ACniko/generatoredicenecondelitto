@@ -73,7 +73,6 @@ const App: React.FC = () => {
       </main>
       
       <footer className="text-center mt-8 text-gray-500 text-sm">
-        <p>Creato con l'aiuto dell'intelligenza artificiale per un divertimento assicurato.</p>
       </footer>
     </div>
   );
