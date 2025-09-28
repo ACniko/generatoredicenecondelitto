@@ -52,7 +52,20 @@ const App: React.FC = () => {
             <DetectiveIcon className="w-12 h-12 text-amber-300"/>
             <h1 className="text-4xl sm:text-5xl font-bold text-amber-200">Generatore di Cene con Delitto</h1>
         </div>
-        <p className="text-lg text-gray-400">Crea misteri avvincenti per serate indimenticabili.</p>
+        <p className="text-lg text-gray-400 mb-4">Crea misteri avvincenti per serate indimenticabili.</p>
+        <div className="bg-gray-800/70 p-4 rounded-lg text-left max-w-3xl mx-auto">
+          <h2 className="text-xl font-semibold text-amber-300 mb-2">Cene con Delitto Gratis: Giochi di Ruolo per Serate Speciali</h2>
+          <p className="text-gray-300 mb-3">
+            Benvenuto nel miglior <strong>generatore di cene con delitto</strong> online e completamente gratuito! 
+            Crea storie uniche per organizzare <strong>giochi con delitto</strong> e <strong>giochi da fare a cena</strong> con 
+            i tuoi amici, senza costi e senza limiti.
+          </p>
+          <p className="text-gray-300">
+            Le nostre <strong>cene con delitto</strong> sono perfette per chi ama i <strong>giochi di ruolo</strong> e vuole 
+            vivere un'esperienza immersiva. Ogni storia è unica e generata con intelligenza artificiale, 
+            pronta per essere scaricata e condivisa con tutti i partecipanti.
+          </p>
+        </div>
       </header>
 
       <main className="w-full max-w-5xl bg-gray-800/50 backdrop-blur-sm rounded-lg shadow-2xl shadow-black/30 p-6 sm:p-8">
