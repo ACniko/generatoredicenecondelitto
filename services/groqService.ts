@@ -135,7 +135,11 @@ Esempio di struttura:
   }
 }
 
-Genera l'output esclusivamente in formato JSON, in lingua italiana, seguendo ESATTAMENTE lo schema fornito sopra. Assicurati che il numero di personaggi generati corrisponda esattamente al numero di giocatori richiesto (${playerCount}). Tutti i campi sono OBBLIGATORI e non devono essere omessi.
+Genera l'output esclusivamente in formato JSON, in lingua italiana, seguendo ESATTAMENTE lo schema fornito sopra. 
+
+ATTENZIONE: È ASSOLUTAMENTE CRITICO che tu generi ESATTAMENTE ${playerCount} personaggi, né uno di più né uno di meno. La lista "characters" DEVE contenere esattamente ${playerCount} elementi. Questo è un requisito non negoziabile.
+
+Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente il tuo output prima di finalizzarlo.
 `;
 
   try {
@@ -149,7 +153,7 @@ Genera l'output esclusivamente in formato JSON, in lingua italiana, seguendo ESA
       body: JSON.stringify({
         prompt: generationPrompt,
         model: "openai/gpt-oss-120b",
-        temperature: 1,
+        temperature: 0.7, // Riduco la temperatura per risultati più deterministici
         top_p: 0.95,
         response_format: { type: "json_object" }
       })
@@ -163,7 +167,8 @@ Genera l'output esclusivamente in formato JSON, in lingua italiana, seguendo ESA
     
     // Verifica se c'è un errore nella risposta
     if (result.error) {
-      throw new Error(`API error: ${result.error}`);
+      console.warn(`API error: ${result.error}`);
+      throw new Error(`Error calling Groq API: ${result.error}`);
     }
     
     const jsonText = result.content.trim();
@@ -182,27 +187,85 @@ Genera l'output esclusivamente in formato JSON, in lingua italiana, seguendo ESA
       throw new Error('La struttura dei dati generata non è valida. Mancano campi obbligatori.');
     }
     
-    // Verifica che il numero di personaggi sia corretto
+    // Verifica e correggi il numero di personaggi se necessario
     if (storyData.characters.length !== playerCount) {
-      throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}.`);
+      console.warn(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Tentativo di correzione...`);
+      
+      // Se ci sono troppi personaggi, rimuovi quelli in eccesso
+      if (storyData.characters.length > playerCount) {
+        // Rimuovi i personaggi non colpevoli per primi, se possibile
+        const nonCulprits = storyData.characters.filter(char => !char.isCulprit);
+        const culprits = storyData.characters.filter(char => char.isCulprit);
+        
+        // Calcola quanti personaggi rimuovere
+        const toRemove = storyData.characters.length - playerCount;
+        
+        if (nonCulprits.length >= toRemove) {
+          // Possiamo rimuovere solo personaggi non colpevoli
+          storyData.characters = [...culprits, ...nonCulprits.slice(0, nonCulprits.length - toRemove)];
+        } else {
+          // Dobbiamo rimuovere anche alcuni colpevoli
+          throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Impossibile correggere automaticamente.`);
+        }
+      } else {
+        // Se ci sono troppo pochi personaggi, non possiamo correggerlo automaticamente
+        throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Impossibile correggere automaticamente.`);
+      }
+      
+      // Verifica che la correzione abbia funzionato
+      if (storyData.characters.length !== playerCount) {
+        throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. La correzione automatica non è riuscita.`);
+      }
+      
+      console.log(`Correzione riuscita: ora ci sono ${storyData.characters.length} personaggi.`);
     }
 
     // --- 2. VERIFICATION STEP ---
     const verificationPrompt = `
-Sei un detective esperto e un maestro della logica. Il tuo compito è revisionare meticolosamente la seguente storia "cena con delitto" per individuare ogni possibile incongruenza, contraddizione o buco di trama. La storia deve essere difficile, ma **risolvibile attraverso la deduzione logica**.
+Sei un detective esperto e un maestro della logica con un'attenzione maniacale ai dettagli. Il tuo compito è revisionare meticolosamente la seguente storia "cena con delitto" per individuare e correggere OGNI possibile incongruenza, contraddizione o buco di trama. La storia DEVE essere difficile ma ASSOLUTAMENTE risolvibile attraverso la deduzione logica.
 
 Ecco i dati della storia da esaminare:
 ${JSON.stringify(storyData, null, 2)}
 
-Esegui i seguenti controlli:
-1.  **Coerenza**: Esistono contraddizioni negli alibi, nelle tempistiche, nelle relazioni o nei segreti dei personaggi?
-2.  **Movente**: Il movente del colpevole è credibile e sufficientemente forte per giustificare un omicidio nel contesto della storia?
-3.  **Risolvibilità**: Il colpevole può essere identificato unendo logicamente gli indizi sparsi tra le schede dei vari personaggi? La soluzione non deve basarsi su informazioni che i giocatori non possono ottenere.
-4.  **Piste False vs. Errori**: Assicurati che gli indizi fuorvianti siano distrazioni plausibili e non errori logici che rendono la storia irrisolvibile.
+Esegui i seguenti controlli APPROFONDITI:
+
+1. **Coerenza Temporale**: Verifica che tutti gli eventi, gli alibi e le azioni dei personaggi siano temporalmente coerenti. Controlla che non ci siano sovrapposizioni impossibili o contraddizioni nelle tempistiche.
+
+2. **Coerenza Narrativa**: Assicurati che le informazioni fornite nei vari round siano coerenti tra loro e con la soluzione finale. Ogni personaggio deve avere una storia coerente dall'inizio alla fine.
+
+3. **Movente del Colpevole**: Il movente DEVE essere:
+   - Credibile e sufficientemente forte per giustificare un omicidio
+   - Chiaramente collegato al colpevole
+   - Supportato da indizi distribuiti nella storia
+   - Logicamente consistente con il carattere e la storia del personaggio
+
+4. **Risolvibilità Garantita**: Il colpevole DEVE poter essere identificato unendo logicamente gli indizi sparsi tra le schede dei personaggi. Verifica che:
+   - Esistano indizi sufficienti per identificare il colpevole
+   - Gli indizi siano distribuiti in modo equilibrato tra i personaggi
+   - La soluzione non si basi su informazioni che i giocatori non possono ottenere
+   - Ci sia almeno un indizio cruciale che punti al colpevole in modo inequivocabile
+
+5. **Piste False vs. Errori**: Gli indizi fuorvianti DEVONO essere distrazioni plausibili e non errori logici. Ogni pista falsa deve:
+   - Sembrare inizialmente convincente
+   - Essere logicamente spiegabile nel contesto della storia
+   - Poter essere scartata attraverso un'analisi attenta degli altri indizi
+
+6. **Controllo Incrociato delle Relazioni**: Verifica che le relazioni tra i personaggi siano coerenti in entrambe le direzioni. Se A odia B, questo deve riflettersi in qualche modo anche nella descrizione di B.
+
+7. **Verifica delle Opinioni**: Controlla che le opinioni che ogni personaggio ha degli altri siano coerenti con le loro relazioni e con la trama generale.
 
 Se la storia è perfettamente coerente, logica e risolvibile, restituisci l'oggetto JSON originale senza alcuna modifica.
 
 Se trovi delle incongruenze, il tuo obiettivo è correggerle con la **minima modifica possibile**. Non riscrivere la storia. Apporta solo le modifiche necessarie per risolvere le contraddizioni e garantire la coerenza logica, mantenendo la complessità originale.
+
+IMPORTANTE: Quando correggi la storia, segui queste linee guida:
+1. Assicurati che ogni personaggio abbia un alibi chiaro e verificabile
+2. Verifica che gli indizi siano distribuiti in modo equilibrato nei tre round
+3. Controlla che ogni personaggio abbia un motivo plausibile per essere sospettato
+4. Assicurati che il colpevole abbia lasciato tracce o indizi che possano essere scoperti
+5. Verifica che non ci siano "salti logici" necessari per risolvere il caso
+6. Controlla che tutti i dettagli della scena del crimine siano coerenti con il metodo dell'omicidio
+7. Assicurati che le relazioni tra i personaggi siano realistiche e ben definite
 
 È FONDAMENTALE che tu rispetti ESATTAMENTE questa struttura JSON:
 
@@ -255,7 +318,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
         body: JSON.stringify({
           prompt: verificationPrompt,
           model: "openai/gpt-oss-120b",
-          temperature: 0.2, // Lower temperature for more deterministic, logical corrections
+          temperature: 0.1, // Temperatura ancora più bassa per risultati più deterministici
           response_format: { type: "json_object" }
         })
       });
@@ -293,6 +356,43 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
       if (verifiedStoryData.characters.length !== playerCount) {
         console.warn(`La verifica ha prodotto ${verifiedStoryData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Verrà utilizzata la storia originale.`);
         return storyData;
+      }
+      
+      // Verifica che ci sia almeno un colpevole nella soluzione
+      if (!verifiedStoryData.solution.culprits || verifiedStoryData.solution.culprits.length === 0) {
+        console.warn("La soluzione non contiene colpevoli. Verrà utilizzata la storia originale.");
+        return storyData;
+      }
+      
+      // Verifica che i colpevoli esistano tra i personaggi
+      const characterNames = verifiedStoryData.characters.map(c => c.name);
+      const allCulpritsExist = verifiedStoryData.solution.culprits.every(culprit => 
+        characterNames.includes(culprit)
+      );
+      
+      if (!allCulpritsExist) {
+        console.warn("Alcuni colpevoli nella soluzione non esistono tra i personaggi. Verrà utilizzata la storia originale.");
+        return storyData;
+      }
+      
+      // Verifica che il flag isCulprit sia coerente con la lista dei colpevoli
+      const culpritFlags = verifiedStoryData.characters.map(c => ({
+        name: c.name,
+        isCulprit: c.isCulprit
+      }));
+      
+      const inconsistentCulprits = culpritFlags.filter(c => 
+        (verifiedStoryData.solution.culprits.includes(c.name) && !c.isCulprit) || 
+        (!verifiedStoryData.solution.culprits.includes(c.name) && c.isCulprit)
+      );
+      
+      if (inconsistentCulprits.length > 0) {
+        console.warn("Incoerenza tra i flag isCulprit e la lista dei colpevoli nella soluzione. Correzione automatica...");
+        // Correggi l'incoerenza
+        verifiedStoryData.characters = verifiedStoryData.characters.map(c => ({
+          ...c,
+          isCulprit: verifiedStoryData.solution.culprits.includes(c.name)
+        }));
       }
 
       return verifiedStoryData;
