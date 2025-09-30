@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://tuo-sito.vercel.app/sitemap.xml
+Sitemap: https://generatoredicenecondelitto.vercel.app/sitemap.xml
