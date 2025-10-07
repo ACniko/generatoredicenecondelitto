@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import type { StoryData } from './types';
 import { generateMurderMysteryStory } from './services/adapter';
 import SetupForm from './components/SetupForm';
@@ -19,7 +19,7 @@ const App: React.FC = () => {
       const generatedStory = await generateMurderMysteryStory(playerCount, theme);
 
       if (!generatedStory || !generatedStory.commonDocument || !generatedStory.characters || !generatedStory.solution) {
-        throw new Error('La storia generata non ÃƒÂ¨ valida o ÃƒÂ¨ incompleta. Riprova.');
+        throw new Error('La storia generata non ÃƒÆ’Ã‚Â¨ valida o ÃƒÆ’Ã‚Â¨ incompleta. Riprova.');
       }
 
       if (generatedStory.characters.length !== playerCount) {
@@ -28,7 +28,7 @@ const App: React.FC = () => {
 
       setStory(generatedStory);
     } catch (err: any) {
-      setError(err.message || 'Si ÃƒÂ¨ verificato un errore durante la generazione della storia. Potrebbe essere un problema con la chiave API o una risposta inattesa dal modello. Riprova.');
+      setError(err.message || 'Si ÃƒÆ’Ã‚Â¨ verificato un errore durante la generazione della storia. Potrebbe essere un problema con la chiave API o una risposta inattesa dal modello. Riprova.');
       console.error('Story generation error:', err);
     } finally {
       setIsLoading(false);
@@ -56,7 +56,7 @@ const App: React.FC = () => {
             Crea storie di fiction per organizzare <strong>giochi con delitto</strong> e <strong>giochi da fare a cena</strong> con i tuoi amici, senza costi e senza limiti.
           </p>
           <p className="text-gray-300">
-            Tutti gli scenari prodotti sono verificati per evitare linguaggio esplicito, scene violente grafiche o discriminazioni, cosÃƒÂ¬ da rispettare le <strong>Norme sul contenuto di Google AdSense</strong> e offrire esperienze inclusive.
+            Tutti gli scenari prodotti sono verificati per evitare linguaggio esplicito, scene violente grafiche o discriminazioni, cosÃƒÆ’Ã‚Â¬ da rispettare le <strong>Norme sul contenuto di Google AdSense</strong> e offrire esperienze inclusive.
           </p>
         </div>
       </header>
@@ -84,7 +84,7 @@ const App: React.FC = () => {
             <li><a className="hover:text-amber-300 underline-offset-4 hover:underline" href="/privacy-policy.html">Privacy Policy</a></li>
             <li><a className="hover:text-amber-300 underline-offset-4 hover:underline" href="/termini-e-condizioni.html">Termini di Servizio</a></li>
             <li><a className="hover:text-amber-300 underline-offset-4 hover:underline" href="/cookie-policy.html">Cookie Policy</a></li>
-            <li><a className="hover:text-amber-300 underline-offset-4 hover:underline" href="mailto:assistenza@generatoredicenecondelitto.it">Contattaci</a></li>
+            <li><a className="hover:text-amber-300 underline-offset-4 hover:underline" href="mailto:catalangelo@icloud.com">Contattaci</a></li>
           </ul>
         </nav>
         <p className="text-xs text-gray-500">
@@ -96,3 +96,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+
