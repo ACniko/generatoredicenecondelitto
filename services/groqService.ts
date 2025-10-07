@@ -18,7 +18,7 @@ const storySchema = {
       properties: {
         introduction: { type: "string", description: 'Introduzione generale alla storia che prepara la scena, in italiano.' },
         crimeSceneMapDescription: { type: "string", description: 'Descrizione testuale dettagliata e suggestiva della mappa della scena del crimine. Deve essere abbastanza chiara da permettere di visualizzare l\'ambiente e i punti di interesse principali (es. posizione del corpo, oggetti fuori posto, possibili vie di fuga). In italiano.' },
-        characterOverviews: { type: "string", description: 'Una breve panoramica pubblica di tutti i personaggi e delle loro relazioni reciproche note all\'inizio del gioco. Questo testo verrà letto da tutti. In italiano.' }
+        characterOverviews: { type: "string", description: 'Una breve panoramica pubblica di tutti i personaggi e delle loro relazioni reciproche note all\'inizio del gioco. Questo testo verrÃ  letto da tutti. In italiano.' }
       },
       required: ['introduction', 'crimeSceneMapDescription', 'characterOverviews']
     },
@@ -32,13 +32,13 @@ const storySchema = {
           isCulprit: { type: "boolean" },
           initialDescription: { type: "string", description: 'Descrizione pubblica iniziale del personaggio, in italiano.' },
           relationships: { type: "string", description: 'Descrizione delle relazioni del personaggio con gli altri, dal suo punto di vista privato. Potrebbe contenere dettagli non noti a tutti. In italiano.' },
-          round1Info: { type: "string", description: 'Informazioni per il Round 1. Deve includere: 1) Cosa il personaggio sa e può rivelare. 2) Un obiettivo specifico per il round (es. "Parla con X per scoprire Y"). 3) Un\'osservazione o un sospetto su un altro personaggio. In italiano.' },
-          round2Info: { type: "string", description: 'Informazioni per il Round 2. Nuovi segreti cruciali. Deve includere: 1) Nuove rivelazioni personali. 2) Un nuovo obiettivo più urgente. 3) Un segreto scoperto o un\'azione sospetta notata in un altro personaggio. In italiano.' },
+          round1Info: { type: "string", description: 'Informazioni per il Round 1. Deve includere: 1) Cosa il personaggio sa e puÃ² rivelare. 2) Un obiettivo specifico per il round (es. "Parla con X per scoprire Y"). 3) Un\'osservazione o un sospetto su un altro personaggio. In italiano.' },
+          round2Info: { type: "string", description: 'Informazioni per il Round 2. Nuovi segreti cruciali. Deve includere: 1) Nuove rivelazioni personali. 2) Un nuovo obiettivo piÃ¹ urgente. 3) Un segreto scoperto o un\'azione sospetta notata in un altro personaggio. In italiano.' },
           round3Info: { type: "string", description: 'Informazioni per il Round 3. Colpi di scena finali. Deve includere: 1) La rivelazione finale che possiede il personaggio. 2) L\'obiettivo finale (es. "Accusa X basandoti su Y"). 3) L\'elemento chiave che collega tutti gli indizi dal suo punto di vista. In italiano.' },
-          secretsAndMotives: { type: "string", description: 'Segreti privati e potenziali moventi, anche se il personaggio è innocente. Utile per il giocatore per interpretare il suo ruolo, in italiano.' },
+          secretsAndMotives: { type: "string", description: 'Segreti privati e potenziali moventi, anche se il personaggio Ã¨ innocente. Utile per il giocatore per interpretare il suo ruolo, in italiano.' },
           opinionsOnOthers: {
             type: "array",
-            description: "Una lista delle opinioni personali e private del personaggio sugli altri partecipanti. Queste opinioni devono essere soggettive, riflettere pregiudizi, sospetti o legami segreti. Non è necessario avere un'opinione su tutti.",
+            description: "Una lista delle opinioni personali e private del personaggio sugli altri partecipanti. Queste opinioni devono essere soggettive, riflettere pregiudizi, sospetti o legami segreti. Non Ã¨ necessario avere un'opinione su tutti.",
             items: {
               type: "object",
               properties: {
@@ -60,7 +60,7 @@ const storySchema = {
           items: { type: "string" }
         },
         motive: { type: "string", description: 'Il vero movente del/i colpevole/i, in italiano.' },
-        how: { type: "string", description: 'Come è stato commesso il crimine, in dettaglio, in italiano.' },
+        how: { type: "string", description: 'Come Ã¨ stato commesso il crimine, in dettaglio, in italiano.' },
         backstory: { type: "string", description: 'La storia completa e i retroscena che hanno portato al delitto, in italiano.' }
       },
       required: ['culprits', 'motive', 'how', 'backstory']
@@ -71,12 +71,17 @@ const storySchema = {
 
 export const generateMurderMysteryStory = async (playerCount: number, theme: string): Promise<StoryData> => {
   const generationPrompt = `
-Sei un maestro narratore e creatore di giochi "cena con delitto". Il tuo compito è generare una storia completa, avvincente e complessa basata sul tema e sul numero di giocatori forniti.
+Sei un maestro narratore e creatore di giochi "cena con delitto". Il tuo compito Ã¨ generare una storia completa, avvincente e complessa basata sul tema e sul numero di giocatori forniti.
 
-Il numero di giocatori è: ${playerCount}.
-Il tema della storia è: "${theme}".
+Il numero di giocatori Ã¨: ${playerCount}.
+Il tema della storia Ã¨: "${theme}".
 
 La storia deve essere eccezionalmente avvincente e difficile da risolvere. Segui queste direttive con la massima precisione:
+
+Vincoli di sicurezza e conformità:
+- Usa un linguaggio adatto a un pubblico generale, evitando descrizioni grafiche di violenza, dettagli macabri o contenuti sessuali espliciti.
+- Non inserire discriminazioni, incitazioni all'odio o contenuti che possano violare le Norme del programma Google AdSense.
+- Assicurati che il finale sia risolutivo e che i personaggi non glorifichino comportamenti illegali.
 
 1.  **Documento Comune Iniziale**: Crea un documento comune per tutti i giocatori che includa:
     *   Un'introduzione suggestiva che definisca l'ambientazione e l'evento scatenante (il delitto).
@@ -84,20 +89,20 @@ La storia deve essere eccezionalmente avvincente e difficile da risolvere. Segui
     *   Una panoramica generale e pubblica di tutti i personaggi e delle loro relazioni conosciute.
 
 2.  **Personaggi Complessi**:
-    *   **Colpevoli Nascosti**: Deve esserci almeno un colpevole. Se sono più di uno, la loro alleanza deve essere un segreto scioccante.
+    *   **Colpevoli Nascosti**: Deve esserci almeno un colpevole. Se sono piÃ¹ di uno, la loro alleanza deve essere un segreto scioccante.
     *   **Segreti per Tutti**: OGNI personaggio, specialmente quelli innocenti, deve avere un segreto importante, un movente credibile o un comportamento sospetto che lo renda un potenziale colpevole. Le "piste false" (red herrings) sono fondamentali.
     *   **Relazioni Private**: La sezione "relationships" di ogni personaggio deve descrivere i suoi veri sentimenti e le interazioni segrete con gli altri, non solo le relazioni pubbliche.
 
-3.  **Rivelazione a Round Interattiva**: Le informazioni per ciascun personaggio devono essere suddivise in tre round. È CRUCIALE che ogni round non contenga solo informazioni su se stessi, ma anche e soprattutto **indizi, osservazioni e segreti scoperti riguardo ad ALTRI personaggi**.
+3.  **Rivelazione a Round Interattiva**: Le informazioni per ciascun personaggio devono essere suddivise in tre round. Ãˆ CRUCIALE che ogni round non contenga solo informazioni su se stessi, ma anche e soprattutto **indizi, osservazioni e segreti scoperti riguardo ad ALTRI personaggi**.
     *   **Round 1**: Informazioni di base, alibi e prime osservazioni sospette sugli altri. Assegna a ogni personaggio un piccolo obiettivo per iniziare le interazioni (es: "Chiedi a [Nome] del suo litigio con la vittima").
-    *   **Round 2**: Rivelazioni più profonde, segreti che vengono a galla, e indizi più concreti. Gli obiettivi diventano più urgenti (es: "Confronta [Nome] riguardo alla bugia che ha detto nel Round 1").
-    *   **Round 3**: Colpi di scena finali, l'indizio decisivo o la confessione parziale che permette di risolvere il caso. L'obiettivo è formulare un'accusa concreta.
+    *   **Round 2**: Rivelazioni piÃ¹ profonde, segreti che vengono a galla, e indizi piÃ¹ concreti. Gli obiettivi diventano piÃ¹ urgenti (es: "Confronta [Nome] riguardo alla bugia che ha detto nel Round 1").
+    *   **Round 3**: Colpi di scena finali, l'indizio decisivo o la confessione parziale che permette di risolvere il caso. L'obiettivo Ã¨ formulare un'accusa concreta.
 
-4.  **Opinioni Private (Cruciale)**: Per ogni personaggio, includi una sezione \`opinionsOnOthers\`. Questa deve contenere una lista degli altri personaggi con una breve descrizione e un'opinione *dal punto di vista del personaggio a cui appartiene la scheda*. Queste opinioni devono essere soggettive, piene di pregiudizi, sospetti o affetto, e riflettere le loro relazioni segrete e la loro personalità.
+4.  **Opinioni Private (Cruciale)**: Per ogni personaggio, includi una sezione \`opinionsOnOthers\`. Questa deve contenere una lista degli altri personaggi con una breve descrizione e un'opinione *dal punto di vista del personaggio a cui appartiene la scheda*. Queste opinioni devono essere soggettive, piene di pregiudizi, sospetti o affetto, e riflettere le loro relazioni segrete e la loro personalitÃ .
 
 5.  **Coerenza Totale**: Assicurati che ogni elemento (moventi, alibi, indizi, relazioni, segreti, opinioni e la soluzione finale) sia perfettamente logico e coerente. La soluzione deve essere deducibile, sebbene difficile.
 
-6. **STRUTTURA JSON OBBLIGATORIA**: È FONDAMENTALE che tu rispetti ESATTAMENTE questa struttura JSON:
+6. **STRUTTURA JSON OBBLIGATORIA**: Ãˆ FONDAMENTALE che tu rispetti ESATTAMENTE questa struttura JSON:
 
 Esempio di struttura:
 {
@@ -130,14 +135,14 @@ Esempio di struttura:
   "solution": {
     "culprits": ["Nome Colpevole 1", "Nome Colpevole 2"],
     "motive": "Motivo del delitto...",
-    "how": "Come è stato commesso il delitto...",
+    "how": "Come Ã¨ stato commesso il delitto...",
     "backstory": "Storia completa dietro il delitto..."
   }
 }
 
 Genera l'output esclusivamente in formato JSON, in lingua italiana, seguendo ESATTAMENTE lo schema fornito sopra. 
 
-ATTENZIONE: È ASSOLUTAMENTE CRITICO che tu generi ESATTAMENTE ${playerCount} personaggi, né uno di più né uno di meno. La lista "characters" DEVE contenere esattamente ${playerCount} elementi. Questo è un requisito non negoziabile.
+ATTENZIONE: Ãˆ ASSOLUTAMENTE CRITICO che tu generi ESATTAMENTE ${playerCount} personaggi, nÃ© uno di piÃ¹ nÃ© uno di meno. La lista "characters" DEVE contenere esattamente ${playerCount} elementi. Questo Ã¨ un requisito non negoziabile.
 
 Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente il tuo output prima di finalizzarlo.
 `;
@@ -153,7 +158,7 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
       body: JSON.stringify({
         prompt: generationPrompt,
         model: "openai/gpt-oss-120b",
-        temperature: 0.7, // Riduco la temperatura per risultati più deterministici
+        temperature: 0.7, // Riduco la temperatura per risultati piÃ¹ deterministici
         top_p: 0.95,
         response_format: { type: "json_object" }
       })
@@ -165,7 +170,7 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
     
     const result = await response.json();
     
-    // Verifica se c'è un errore nella risposta
+    // Verifica se c'Ã¨ un errore nella risposta
     if (result.error) {
       console.warn(`API error: ${result.error}`);
       throw new Error(`Error calling Groq API: ${result.error}`);
@@ -179,12 +184,12 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
       storyData = JSON.parse(jsonText) as StoryData;
     } catch (error) {
       console.error('Failed to parse JSON response:', error);
-      throw new Error('La risposta dell\'API non è in formato JSON valido.');
+      throw new Error('La risposta dell\'API non Ã¨ in formato JSON valido.');
     }
 
     // Verifica che la struttura dei dati sia valida
     if (!storyData || !storyData.commonDocument || !storyData.characters || !storyData.solution) {
-      throw new Error('La struttura dei dati generata non è valida. Mancano campi obbligatori.');
+      throw new Error('La struttura dei dati generata non Ã¨ valida. Mancano campi obbligatori.');
     }
     
     // Verifica e correggi il numero di personaggi se necessario
@@ -214,7 +219,7 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
       
       // Verifica che la correzione abbia funzionato
       if (storyData.characters.length !== playerCount) {
-        throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. La correzione automatica non è riuscita.`);
+        throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. La correzione automatica non Ã¨ riuscita.`);
       }
       
       console.log(`Correzione riuscita: ora ci sono ${storyData.characters.length} personaggi.`);
@@ -222,7 +227,7 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
 
     // --- 2. VERIFICATION STEP ---
     const verificationPrompt = `
-Sei un detective esperto e un maestro della logica con un'attenzione maniacale ai dettagli. Il tuo compito è revisionare meticolosamente la seguente storia "cena con delitto" per individuare e correggere OGNI possibile incongruenza, contraddizione o buco di trama. La storia DEVE essere difficile ma ASSOLUTAMENTE risolvibile attraverso la deduzione logica.
+Sei un detective esperto e un maestro della logica con un'attenzione maniacale ai dettagli. Il tuo compito Ã¨ revisionare meticolosamente la seguente storia "cena con delitto" per individuare e correggere OGNI possibile incongruenza, contraddizione o buco di trama. La storia DEVE essere difficile ma ASSOLUTAMENTE risolvibile attraverso la deduzione logica.
 
 Ecco i dati della storia da esaminare:
 ${JSON.stringify(storyData, null, 2)}
@@ -239,7 +244,7 @@ Esegui i seguenti controlli APPROFONDITI:
    - Supportato da indizi distribuiti nella storia
    - Logicamente consistente con il carattere e la storia del personaggio
 
-4. **Risolvibilità Garantita**: Il colpevole DEVE poter essere identificato unendo logicamente gli indizi sparsi tra le schede dei personaggi. Verifica che:
+4. **RisolvibilitÃ  Garantita**: Il colpevole DEVE poter essere identificato unendo logicamente gli indizi sparsi tra le schede dei personaggi. Verifica che:
    - Esistano indizi sufficienti per identificare il colpevole
    - Gli indizi siano distribuiti in modo equilibrato tra i personaggi
    - La soluzione non si basi su informazioni che i giocatori non possono ottenere
@@ -254,9 +259,9 @@ Esegui i seguenti controlli APPROFONDITI:
 
 7. **Verifica delle Opinioni**: Controlla che le opinioni che ogni personaggio ha degli altri siano coerenti con le loro relazioni e con la trama generale.
 
-Se la storia è perfettamente coerente, logica e risolvibile, restituisci l'oggetto JSON originale senza alcuna modifica.
+Se la storia Ã¨ perfettamente coerente, logica e risolvibile, restituisci l'oggetto JSON originale senza alcuna modifica.
 
-Se trovi delle incongruenze, il tuo obiettivo è correggerle con la **minima modifica possibile**. Non riscrivere la storia. Apporta solo le modifiche necessarie per risolvere le contraddizioni e garantire la coerenza logica, mantenendo la complessità originale.
+Se trovi delle incongruenze, il tuo obiettivo Ã¨ correggerle con la **minima modifica possibile**. Non riscrivere la storia. Apporta solo le modifiche necessarie per risolvere le contraddizioni e garantire la coerenza logica, mantenendo la complessitÃ  originale.
 
 IMPORTANTE: Quando correggi la storia, segui queste linee guida:
 1. Assicurati che ogni personaggio abbia un alibi chiaro e verificabile
@@ -267,7 +272,7 @@ IMPORTANTE: Quando correggi la storia, segui queste linee guida:
 6. Controlla che tutti i dettagli della scena del crimine siano coerenti con il metodo dell'omicidio
 7. Assicurati che le relazioni tra i personaggi siano realistiche e ben definite
 
-È FONDAMENTALE che tu rispetti ESATTAMENTE questa struttura JSON:
+Ãˆ FONDAMENTALE che tu rispetti ESATTAMENTE questa struttura JSON:
 
 Esempio di struttura:
 {
@@ -300,7 +305,7 @@ Esempio di struttura:
   "solution": {
     "culprits": ["Nome Colpevole 1", "Nome Colpevole 2"],
     "motive": "Motivo del delitto...",
-    "how": "Come è stato commesso il delitto...",
+    "how": "Come Ã¨ stato commesso il delitto...",
     "backstory": "Storia completa dietro il delitto..."
   }
 }
@@ -318,7 +323,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
         body: JSON.stringify({
           prompt: verificationPrompt,
           model: "openai/gpt-oss-120b",
-          temperature: 0.1, // Temperatura ancora più bassa per risultati più deterministici
+          temperature: 0.1, // Temperatura ancora piÃ¹ bassa per risultati piÃ¹ deterministici
           response_format: { type: "json_object" }
         })
       });
@@ -329,7 +334,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
       
       const verificationResult = await verificationResponse.json();
       
-      // Verifica se c'è un errore nella risposta di verifica
+      // Verifica se c'Ã¨ un errore nella risposta di verifica
       if (verificationResult.error) {
         console.warn(`API verification error: ${verificationResult.error}`);
         return storyData; // Fallback alla storia originale
@@ -348,19 +353,19 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
 
       // Verifica che la struttura dei dati sia valida
       if (!verifiedStoryData || !verifiedStoryData.commonDocument || !verifiedStoryData.characters || !verifiedStoryData.solution) {
-        console.warn("La struttura dei dati verificata non è valida. Mancano campi obbligatori. Verrà utilizzata la storia originale.");
+        console.warn("La struttura dei dati verificata non Ã¨ valida. Mancano campi obbligatori. VerrÃ  utilizzata la storia originale.");
         return storyData;
       }
       
       // Verifica che il numero di personaggi sia corretto
       if (verifiedStoryData.characters.length !== playerCount) {
-        console.warn(`La verifica ha prodotto ${verifiedStoryData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Verrà utilizzata la storia originale.`);
+        console.warn(`La verifica ha prodotto ${verifiedStoryData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. VerrÃ  utilizzata la storia originale.`);
         return storyData;
       }
       
       // Verifica che ci sia almeno un colpevole nella soluzione
       if (!verifiedStoryData.solution.culprits || verifiedStoryData.solution.culprits.length === 0) {
-        console.warn("La soluzione non contiene colpevoli. Verrà utilizzata la storia originale.");
+        console.warn("La soluzione non contiene colpevoli. VerrÃ  utilizzata la storia originale.");
         return storyData;
       }
       
@@ -371,7 +376,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
       );
       
       if (!allCulpritsExist) {
-        console.warn("Alcuni colpevoli nella soluzione non esistono tra i personaggi. Verrà utilizzata la storia originale.");
+        console.warn("Alcuni colpevoli nella soluzione non esistono tra i personaggi. VerrÃ  utilizzata la storia originale.");
         return storyData;
       }
       
@@ -399,7 +404,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
 
     } catch (verificationError) {
       console.error("Errore durante il passaggio di verifica dell'IA:", verificationError);
-      console.warn("A causa di un errore nella verifica, verrà utilizzata la storia non verificata.");
+      console.warn("A causa di un errore nella verifica, verrÃ  utilizzata la storia non verificata.");
       return storyData; // Fallback to the original story
     }
 
@@ -408,3 +413,5 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
     throw new Error("Failed to generate murder mystery story from API.");
   }
 };
+
+

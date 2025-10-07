@@ -1,0 +1,48 @@
+﻿:root {
+  color-scheme: dark light;
+}
+
+body {
+  min-height: 100vh;
+  background-color: #111827;
+  color: #f9fafb;
+}
+
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  padding: 0.75rem 1rem;
+  background: #f59e0b;
+  color: #111827;
+  font-weight: 600;
+  border-radius: 0 0 0.5rem 0.5rem;
+  z-index: 10000;
+}
+
+.skip-link:focus-visible {
+  left: 0;
+}
+
+.no-js-warning {
+  margin: 1rem;
+  padding: 1rem;
+  background-color: #fef3c7;
+  color: #7c2d12;
+  border-radius: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.no-js-warning a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

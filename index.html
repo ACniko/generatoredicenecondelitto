@@ -1,36 +1,49 @@
-
-<!DOCTYPE html>
-<html lang="it">
+﻿<!DOCTYPE html>
+<html lang="it" class="h-full">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#111827" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="google-site-verification" content="CYacgXJnvT73my8FcAzJF6sWIsJC4mVqS912EANWq2o" />
     <title>Generatore di Cene con Delitto | Crea Giochi di Ruolo Gratis</title>
     <meta name="description" content="Crea gratuitamente cene con delitto personalizzate con il nostro generatore online. Giochi di ruolo e giochi da fare a cena con storie uniche generate con AI." />
     <meta name="keywords" content="generatore di cene con delitto, cene con delitto, cene con delitto gratis, giochi di ruolo, giochi da fare a cena, giochi con delitto" />
-    <link rel="canonical" href="https://tuo-sito.vercel.app" />
-    
+    <link rel="canonical" href="https://generatoredicenecondelitto.vercel.app" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://tuo-sito.vercel.app" />
+    <meta property="og:locale" content="it_IT" />
+    <meta property="og:url" content="https://generatoredicenecondelitto.vercel.app" />
     <meta property="og:title" content="Generatore di Cene con Delitto | Crea Giochi di Ruolo Gratis" />
     <meta property="og:description" content="Crea gratuitamente cene con delitto personalizzate con il nostro generatore online. Giochi di ruolo e giochi da fare a cena con storie uniche generate con AI." />
-    <meta property="og:image" content="https://tuo-sito.vercel.app/og-image.jpg" />
-    
+    <meta property="og:image" content="https://generatoredicenecondelitto.vercel.app/og-image.jpg" />
+
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://tuo-sito.vercel.app" />
+    <meta property="twitter:url" content="https://generatoredicenecondelitto.vercel.app" />
     <meta property="twitter:title" content="Generatore di Cene con Delitto | Crea Giochi di Ruolo Gratis" />
     <meta property="twitter:description" content="Crea gratuitamente cene con delitto personalizzate con il nostro generatore online. Giochi di ruolo e giochi da fare a cena con storie uniche generate con AI." />
-    <meta property="twitter:image" content="https://tuo-sito.vercel.app/og-image.jpg" />
-    
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2839795269333758" crossorigin="anonymous"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <meta property="twitter:image" content="https://generatoredicenecondelitto.vercel.app/og-image.jpg" />
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Roboto:wght@400;500&display=swap" />
+    <script defer src="https://cdn.tailwindcss.com"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://aistudiocdn.com/@google/genai@^1.21.0",
+        "react/": "https://aistudiocdn.com/react@^19.1.1/",
+        "react": "https://aistudiocdn.com/react@^19.1.1",
+        "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="/index.css" />
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Roboto:wght@400;500&display=swap');
       body {
         font-family: 'Roboto', sans-serif;
       }
@@ -38,20 +51,15 @@
         font-family: 'Playfair Display', serif;
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.21.0",
-    "react/": "https://aistudiocdn.com/react@^19.1.1/",
-    "react": "https://aistudiocdn.com/react@^19.1.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/"
-  }
-}
-</script>
-<script src="/cookie-consent.js"></script>
-<link rel="stylesheet" href="/index.css">
-</head>
-  <body class="bg-gray-900 text-white">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script defer src="/cookie-consent.js" data-adsense-client="ca-pub-2839795269333758"></script>
+  </head>
+  <body class="bg-gray-900 text-white min-h-full">
+    <a class="skip-link" href="#main-content">Salta al contenuto principale</a>
+    <noscript>
+      <div class="no-js-warning">Questa applicazione richiede JavaScript attivo per generare le storie. Consulta la nostra <a href="/privacy-policy.html">Privacy Policy</a> per maggiori dettagli.</div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
