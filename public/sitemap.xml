@@ -3,11 +3,16 @@
   <url>
     <loc>https://generatoredicenecondelitto.vercel.app/</loc>
     <priority>1.0</priority>
-    <changefreq>daily</changefreq>
+    <changefreq>weekly</changefreq>
+  </url>
+  <url>
+    <loc>https://generatoredicenecondelitto.vercel.app/about.html</loc>
+    <priority>0.7</priority>
+    <changefreq>monthly</changefreq>
   </url>
   <url>
     <loc>https://generatoredicenecondelitto.vercel.app/privacy-policy.html</loc>
-    <priority>0.7</priority>
+    <priority>0.6</priority>
     <changefreq>monthly</changefreq>
   </url>
   <url>
@@ -17,6 +22,11 @@
   </url>
   <url>
     <loc>https://generatoredicenecondelitto.vercel.app/cookie-policy.html</loc>
+    <priority>0.6</priority>
+    <changefreq>monthly</changefreq>
+  </url>
+  <url>
+    <loc>https://generatoredicenecondelitto.vercel.app/contattaci.html</loc>
     <priority>0.6</priority>
     <changefreq>monthly</changefreq>
   </url>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { UserGroupIcon, BeakerIcon } from './icons';
 
 interface SetupFormProps {
@@ -6,16 +6,30 @@ interface SetupFormProps {
 }
 
 const FALLBACK_THEMES = [
-  "Mistero in villa vittoriana",
-  "Intrigo in una stazione spaziale futuristica",
-  "Delitto sul red carpet di Hollywood",
-  "Cospirazione in un ballo in maschera",
-  "Segreti in un maniero inglese",
-  "Enigma a bordo di un treno notturno"
+  'Mistero in villa vittoriana',
+  'Intrigo in una stazione spaziale futuristica',
+  'Delitto sul red carpet di Hollywood',
+  'Cospirazione in un ballo in maschera',
+  'Segreti in un maniero inglese',
+  'Enigma a bordo di un treno notturno'
 ];
 
 const CUSTOM_THEME_VALUE = 'custom';
 const THEMES_REQUESTED = 6;
+
+const sanitizeThemes = (rawThemes: unknown): string[] => {
+  if (!Array.isArray(rawThemes)) {
+    return [];
+  }
+
+  const cleaned = rawThemes
+    .map((theme) => (typeof theme === 'string' ? theme : ''))
+    .map((theme) => theme.replace(/\s+/g, ' ').trim())
+    .filter((theme) => theme.length > 0)
+    .filter((theme) => theme.split(' ').length <= 5);
+
+  return Array.from(new Set(cleaned)).slice(0, THEMES_REQUESTED);
+};
 
 const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
   const [playerCount, setPlayerCount] = useState<number>(5);
@@ -28,20 +42,6 @@ const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
   const errorRef = useRef<HTMLParagraphElement | null>(null);
 
   const isCustomTheme = themeSelection === CUSTOM_THEME_VALUE;
-
-  const sanitizeThemes = (rawThemes: unknown): string[] => {
-    if (!Array.isArray(rawThemes)) {
-      return [];
-    }
-
-    const cleaned = rawThemes
-      .map((theme) => (typeof theme === 'string' ? theme : ''))
-      .map((theme) => theme.replace(/\s+/g, ' ').trim())
-      .filter((theme) => theme.length > 0)
-      .filter((theme) => theme.split(' ').length <= 5);
-
-    return Array.from(new Set(cleaned)).slice(0, THEMES_REQUESTED);
-  };
 
   const refreshThemes = useCallback(async () => {
     setIsFetchingThemes(true);
@@ -76,39 +76,36 @@ const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
       const generatedThemes = sanitizeThemes(parsed?.themes);
 
       if (generatedThemes.length === 0) {
-        throw new Error('Temi generati non validi. Uso fallback.');
+        throw new Error('Temi generati non validi.');
       }
-
-      const wasCustom = isCustomTheme;
-      const previousSelection = themeSelection;
 
       setThemes(generatedThemes);
+      setThemeSelection((previousSelection) => {
+        if (previousSelection === CUSTOM_THEME_VALUE) {
+          return previousSelection;
+        }
 
-      if (!wasCustom) {
-        const safeSelection = generatedThemes.includes(previousSelection)
-          ? previousSelection
-          : generatedThemes[0];
-        setThemeSelection(safeSelection ?? FALLBACK_THEMES[0]);
-      }
+        if (generatedThemes.includes(previousSelection)) {
+          return previousSelection;
+        }
+
+        return generatedThemes[0] ?? FALLBACK_THEMES[0] ?? CUSTOM_THEME_VALUE;
+      });
     } catch (error) {
       console.error('AI theme generation failed:', error);
       setThemes(FALLBACK_THEMES);
-      setThemeSelection((prev) => (prev === CUSTOM_THEME_VALUE ? prev : FALLBACK_THEMES[0]));
+      setThemeSelection((previousSelection) => (
+        previousSelection === CUSTOM_THEME_VALUE ? previousSelection : FALLBACK_THEMES[0]
+      ));
       setThemeError('Temi AI non disponibili. Usati temi di base.');
     } finally {
       setIsFetchingThemes(false);
     }
-  }, [isCustomTheme, themeSelection]);
+  }, []);
 
   useEffect(() => {
     refreshThemes();
   }, [refreshThemes]);
-
-  useEffect(() => {
-    if (!isCustomTheme && !themes.includes(themeSelection)) {
-      setThemeSelection(themes[0] ?? FALLBACK_THEMES[0] ?? CUSTOM_THEME_VALUE);
-    }
-  }, [themes, themeSelection, isCustomTheme]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();

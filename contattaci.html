@@ -1,0 +1,52 @@
+﻿<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Contatti - Generatore di Cene con Delitto</title>
+  <meta name="description" content="Modalità di contatto, assistenza e richieste personalizzate per il Generatore di Cene con Delitto." />
+  <link rel="stylesheet" href="/index.css" />
+  <style>
+    body { font-family: Arial, sans-serif; background-color: #0f172a; color: #e2e8f0; margin: 0; }
+    main { max-width: 960px; margin: 0 auto; padding: 3rem 1.5rem; }
+    h1, h2 { color: #fbbf24; }
+    section { margin-bottom: 2rem; background: rgba(30, 41, 59, 0.8); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid rgba(148, 163, 184, 0.3); }
+    p { line-height: 1.7; }
+    label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+    input, textarea { width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #475569; background: rgba(15, 23, 42, 0.7); color: #e2e8f0; margin-bottom: 1rem; }
+    button { padding: 0.75rem 1.5rem; background: #fbbf24; color: #0f172a; font-weight: 600; border-radius: 0.5rem; border: none; cursor: pointer; }
+    button:hover { background: #f59e0b; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Contattaci</h1>
+      <p>Hai bisogno di aiuto nell organizzazione della tua cena con delitto o vuoi segnalarci un miglioramento? Compila il modulo qui sotto oppure scrivici direttamente via email.</p>
+    </header>
+
+    <section>
+      <h2>Supporto editoriale</h2>
+      <p>Forniamo assistenza per adattare le storie a contesti specifici, validare contenuti per eventi scolastici e creare materiali aggiuntivi. Scrivici indicando la data dell evento, il numero di partecipanti e il livello di esperienza del gruppo.</p>
+    </section>
+
+    <section>
+      <h2>Modulo di contatto</h2>
+      <form action="mailto:catalangelo@icloud.com" method="post" enctype="text/plain">
+        <label for="name">Nome e cognome</label>
+        <input id="name" name="name" type="text" required placeholder="Es. Giulia Rossi" />
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required placeholder="nome@example.com" />
+
+        <label for="message">Messaggio</label>
+        <textarea id="message" name="message" rows="6" required placeholder="Raccontaci la tua idea, eventuali richieste e tempistiche"></textarea>
+
+        <button type="submit">Invia richiesta</button>
+      </form>
+      <p class="mt-3 text-sm">Preferisci scriverci direttamente? <a href="mailto:catalangelo@icloud.com">catalangelo@icloud.com</a>.</p>
+      <p class="mt-3 text-sm">Torna alla <a href="/">pagina principale</a>.</p>
+    </section>
+  </main>
+</body>
+</html>
