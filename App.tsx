@@ -15,24 +15,21 @@ import {
   HourGlassIcon,
 } from './components/icons';
 
-const qualityHighlights = [
+const heroShowcase = [
   {
-    icon: <KeyIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
-    title: 'Contenuti verificati',
-    description:
-      'Ogni storia elimina duplicati, linguaggio esplicito e materiale sensibile. Il generatore applica controlli automatici per consegnare misteri sicuri e coerenti.'
-  },
-  {
-    icon: <BookOpenIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
-    title: 'Risorse editoriali',
-    description:
-      'Guide pratiche, checklist pre-evento e consigli narrativi ti accompagnano dalla pianificazione alla rivelazione finale.'
+    icon: <BeakerIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
+    title: 'Generazione immediata',
+    description: "Temi sintetici diversi ad ogni visita, pronti per essere adattati al tuo gruppo."
   },
   {
     icon: <MapIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
-    title: 'Supporto trasparente',
-    description:
-      'Pagine legali, canali di contatto e politiche chiare sono sempre disponibili per garantire massima conformità alle norme AdSense.'
+    title: 'Materiale completo',
+    description: "PDF per round con schede personaggio, documento comune e soluzione già impaginati."
+  },
+  {
+    icon: <UserGroupIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
+    title: 'Adatto a tutti',
+    description: "Contenuti controllati e personalizzabili, conformi alle Norme del programma AdSense."
   }
 ];
 
@@ -41,26 +38,47 @@ const howItWorks = [
     icon: <UserGroupIcon className="w-7 h-7 text-amber-300" aria-hidden="true" />,
     title: 'Configura la serata',
     description:
-      'Scegli giocatori e tema. L’AI propone idee sempre diverse, tutte sintetiche e adatte a un pubblico generalista.'
+      "Scegli numero di partecipanti e tema. L'intelligenza artificiale propone rapidamente nuove idee sintetiche."
   },
   {
     icon: <MapIcon className="w-7 h-7 text-amber-300" aria-hidden="true" />,
-    title: 'Scarica il materiale',
+    title: 'Scarica i materiali',
     description:
-      'Documenti comuni, schede personaggio e soluzione sono suddivisi per round e pronti per la stampa o la condivisione digitale.'
+      'Documenti per round, schede personaggio e soluzione sono pronti da stampare o condividere in digitale.'
   },
   {
     icon: <BookOpenIcon className="w-7 h-7 text-amber-300" aria-hidden="true" />,
     title: 'Segui le checklist',
     description:
-      'Usa le guide per organizzatori, le ambientazioni alternative e i consigli dedicati a coinvolgere ogni partecipante.'
+      'Guide pratiche, ambientazioni alternative e consigli per coinvolgere ogni ospite ti accompagnano passo dopo passo.'
+  }
+];
+
+const qualityHighlights = [
+  {
+    icon: <KeyIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
+    title: 'Contenuti verificati',
+    description:
+      "Ogni storia elimina duplicati, linguaggio esplicito e materiale sensibile grazie a controlli automatici e fallback editoriali."
+  },
+  {
+    icon: <BookOpenIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
+    title: 'Risorse editoriali',
+    description:
+      'Checklist stampabili, guide per l'organizzatore e suggerimenti narrativi ti aiutano a creare esperienze memorabili.'
+  },
+  {
+    icon: <MapIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
+    title: 'Documentazione trasparente',
+    description:
+      "Policy, contatti e pagina di supporto sono sempre disponibili per garantire massima conformità alle norme."
   }
 ];
 
 const generatorTips = [
-  'Aggiorna i temi con il pulsante AI finché non trovi l’ispirazione perfetta.',
-  'Distribuisci i PDF per round: facilita il ritmo della storia e riduce gli spoiler.',
-  'Stampa la checklist di controllo inclusa nelle guide per non dimenticare nulla.'
+  'Aggiorna i temi con il pulsante AI finché non trovi l'ispirazione perfetta.',
+  "Scarica i PDF per round appena generati per evitare spoiler ai partecipanti.",
+  "Stampa la checklist pre-evento per non dimenticare materiali o indicazioni importanti."
 ];
 
 const App: React.FC = () => {
@@ -80,7 +98,7 @@ const App: React.FC = () => {
       }
 
       if (generatedStory.characters.length !== playerCount) {
-        throw new Error(`Sono stati generati ${generatedStory.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Riprova.`);
+        throw new Error(Sono stati generati  personaggi, ma ne erano richiesti . Riprova.);
       }
 
       setStory(generatedStory);
@@ -106,12 +124,20 @@ const App: React.FC = () => {
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.12),_transparent_45%),radial-gradient(circle_at_bottom,_rgba(15,23,42,0.4),_transparent_55%)]" />
 
       <div className="relative w-full">
-        <header className="w-full border-b border-slate-800/60 bg-slate-950/80 backdrop-blur">
-          <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-4 md:px-8">
+        <header className="w-full border-b border-slate-800/60 bg-slate-950/80 backdrop-blur sticky top-0 z-30">
+          <nav className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-3 md:px-6">
             <a href="/" className="flex items-center gap-2 text-lg font-semibold text-amber-200">
               <DetectiveIcon className="w-6 h-6" aria-hidden="true" />
               Generatore di Cene con Delitto
             </a>
+            <div className="md:hidden flex items-center gap-3">
+              <a
+                href="#generator"
+                className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-amber-200"
+              >
+                Generatore
+              </a>
+            </div>
             <div className="hidden items-center gap-6 text-sm font-semibold text-slate-300 md:flex">
               <a className="hover:text-amber-200 transition-colors" href="#generator">Generatore</a>
               <a className="hover:text-amber-200 transition-colors" href="#guide-section">Guide</a>
@@ -127,42 +153,102 @@ const App: React.FC = () => {
           </nav>
         </header>
 
-        <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-5 pb-16 pt-10 md:gap-16 md:px-8" id="main-content">
-          <section className="grid gap-10 lg:grid-cols-2 lg:items-center">
+        <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-5 pb-16 pt-6 sm:gap-10 md:gap-16 md:px-8" id="main-content">
+          <section className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:items-center">
             <div className="space-y-6">
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-amber-200">Esperienze investigative per tutti</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">Esperienze investigative accessibili</p>
               <h1 className="text-4xl font-bold text-white md:text-5xl">
                 Organizza una cena con delitto coinvolgente in pochi minuti
               </h1>
-              <p className="text-lg text-slate-300">
-                Genera storie originali verificate, scarica i materiali pronti per la stampa e segui le nostre guide editoriali per
-                costruire un evento memorabile. Tutto senza costi e nel pieno rispetto delle norme AdSense.
+              <p className="text-base text-slate-300 md:text-lg">
+                Genera storie originali verificate, scarica materiali pronti e segui le guide per gestire ogni fase della serata.
+                Nessun costo, massimo controllo editoriale.
               </p>
-              <div className="flex flex-wrap gap-4 text-sm text-slate-200">
-                <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/10 px-4 py-2">
-                  <BeakerIcon className="w-4 h-4 text-amber-300" aria-hidden="true" /> Temi AI illimitati
-                </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/10 px-4 py-2">
-                  <HourGlassIcon className="w-4 h-4 text-amber-300" aria-hidden="true" /> Pronto in <strong className="font-semibold">5'</strong>
-                </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/10 px-4 py-2">
-                  <BookOpenIcon className="w-4 h-4 text-amber-300" aria-hidden="true" /> Guide professionali
-                </span>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <a
+                  href="#generator"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-amber-400 px-5 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-amber-400/30 transition-transform hover:-translate-y-0.5 hover:bg-amber-300"
+                >
+                  <BeakerIcon className="w-4 h-4" aria-hidden="true" /> Genera una storia
+                </a>
+                <a
+                  href="#guide-section"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-amber-400/40 bg-slate-900/60 px-5 py-3 text-sm font-semibold text-amber-200 transition-colors hover:bg-slate-900/80"
+                >
+                  <BookOpenIcon className="w-4 h-4" aria-hidden="true" /> Esplora le guide
+                </a>
               </div>
             </div>
+            <div className="space-y-4">
+              <div className="flex gap-4 overflow-x-auto rounded-2xl border border-slate-800/60 bg-slate-900/60 p-4 sm:grid sm:grid-cols-1 sm:gap-4 md:grid-cols-2">
+                {heroShowcase.map((item) => (
+                  <div key={item.title} className="min-w-[220px] sm:min-w-0 rounded-xl border border-slate-800/60 bg-slate-950/60 p-4">
+                    <div className="flex items-center gap-3 text-amber-300 mb-2">{item.icon}</div>
+                    <h3 className="text-sm font-semibold text-white">{item.title}</h3>
+                    <p className="mt-2 text-xs text-slate-300 leading-relaxed">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
 
-            <div className="grid gap-4">
-              {qualityHighlights.map((item) => (
-                <div key={item.title} className="flex items-start gap-4 rounded-xl border border-slate-800/60 bg-slate-900/70 p-5 shadow-lg shadow-black/20">
-                  <div className="rounded-full bg-amber-400/10 p-3 text-amber-300">
-                    {item.icon}
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="text-lg font-semibold text-white">{item.title}</h3>
-                    <p className="text-sm text-slate-300 leading-relaxed">{item.description}</p>
-                  </div>
+          <section id="generator" className="scroll-mt-24 rounded-2xl border border-amber-400/30 bg-slate-900/80 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.45)] sm:p-8">
+            <div className="space-y-4 sm:space-y-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">Generatore rapido</p>
+                  <h2 className="text-2xl font-semibold text-white md:text-3xl">Crea la tua storia subito</h2>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Inserisci poche informazioni, lascia che l'AI proponga temi concisi e scarica i PDF per ogni round. Ideale anche su smartphone.
+                  </p>
                 </div>
-              ))}
+                <div className="flex items-center gap-2 text-xs text-amber-200">
+                  <HourGlassIcon className="w-4 h-4" aria-hidden="true" /> tempo medio 5 minuti
+                </div>
+              </div>
+
+              {!story && !isLoading && (
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(240px,0.85fr)]">
+                  <div className="order-1">
+                    <SetupForm onGenerate={handleGenerateStory} />
+                  </div>
+                  <aside className="order-2 flex flex-col gap-4 rounded-xl border border-amber-400/30 bg-amber-400/5 p-6">
+                    <h3 className="text-base font-semibold text-amber-200 flex items-center gap-2">
+                      <MapIcon className="w-5 h-5" aria-hidden="true" />
+                      Suggerimenti rapidi
+                    </h3>
+                    <ul className="space-y-3 text-sm text-amber-100/90">
+                      {generatorTips.map((tip, index) => (
+                        <li key={index} className="flex gap-3">
+                          <span className="mt-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300/40 text-xs font-semibold text-amber-200">
+                            {index + 1}
+                          </span>
+                          <p className="leading-relaxed text-slate-200">{tip}</p>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-auto text-xs text-amber-100/80">
+                      Consiglio: genera i PDF subito dopo aver scelto il tema per salvare una copia con i nomi personalizzati.
+                    </p>
+                  </aside>
+                </div>
+              )}
+
+              {isLoading && <LoadingSpinner />}
+
+              {error && (
+                <div className="text-center space-y-4" role="alert" aria-live="assertive">
+                  <p className="text-red-400 text-xl">{error}</p>
+                  <button
+                    onClick={handleReset}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300"
+                  >
+                    Torna indietro
+                  </button>
+                </div>
+              )}
+
+              {story && !isLoading && <StoryDisplay story={story} onReset={handleReset} />}
             </div>
           </section>
 
@@ -171,8 +257,7 @@ const App: React.FC = () => {
               <p className="text-sm font-semibold uppercase tracking-[0.3em] text-amber-200">Workflow</p>
               <h2 className="text-2xl font-semibold text-white md:text-3xl">Come funziona il generatore</h2>
               <p className="text-sm text-slate-300">
-                Dalla scelta del tema alla rivelazione finale: ecco come trasformiamo pochi input in un’esperienza narrativa completa e
-                pronta da giocare.
+                Dalla scelta del tema alla rivelazione finale: trasformiamo pochi input in un'esperienza narrativa completa, pronta da giocare.
               </p>
             </div>
             <div className="grid gap-4 md:col-span-2 md:grid-cols-3">
@@ -186,47 +271,14 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          <section id="generator" className="rounded-2xl border border-slate-800/60 bg-slate-900/70 p-6 sm:p-8">
-            {!story && !isLoading && (
-              <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(260px,0.9fr)]">
-                <SetupForm onGenerate={handleGenerateStory} />
-                <aside className="flex flex-col gap-4 rounded-xl border border-amber-400/30 bg-amber-400/5 p-6">
-                  <h3 className="text-lg font-semibold text-amber-200 flex items-center gap-2">
-                    <MapIcon className="w-5 h-5" aria-hidden="true" />
-                    Suggerimenti rapidi
-                  </h3>
-                  <ul className="space-y-3 text-sm text-amber-100/90">
-                    {generatorTips.map((tip, index) => (
-                      <li key={index} className="flex gap-3">
-                        <span className="mt-1 inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-300/40 text-xs font-semibold text-amber-200">
-                          {index + 1}
-                        </span>
-                        <p className="leading-relaxed text-slate-200">{tip}</p>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-auto text-xs text-amber-100/80">
-                    Consiglio: genera i PDF dopo aver salvato i temi preferiti, così potrai ripetere la serata con varianti sempre nuove.
-                  </p>
-                </aside>
+          <section className="grid gap-4 rounded-2xl border border-slate-800/60 bg-slate-900/60 p-6 sm:p-8 md:grid-cols-3">
+            {qualityHighlights.map((item) => (
+              <div key={item.title} className="flex h-full flex-col gap-3 rounded-xl border border-slate-800/60 bg-slate-950/60 p-5">
+                <div className="flex items-center gap-3 text-amber-300">{item.icon}</div>
+                <h3 className="text-base font-semibold text-white">{item.title}</h3>
+                <p className="text-sm text-slate-300 leading-relaxed">{item.description}</p>
               </div>
-            )}
-
-            {isLoading && <LoadingSpinner />}
-
-            {error && (
-              <div className="text-center space-y-4" role="alert" aria-live="assertive">
-                <p className="text-red-400 text-xl">{error}</p>
-                <button
-                  onClick={handleReset}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300"
-                >
-                  Torna indietro
-                </button>
-              </div>
-            )}
-
-            {story && !isLoading && <StoryDisplay story={story} onReset={handleReset} />}
+            ))}
           </section>
         </main>
 
@@ -263,3 +315,5 @@ const App: React.FC = () => {
 };
 
 export default App;
+
+
