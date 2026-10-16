@@ -98,7 +98,7 @@ const App: React.FC = () => {
       }
 
       if (generatedStory.characters.length !== playerCount) {
-        throw new Error(Sono stati generati  personaggi, ma ne erano richiesti . Riprova.);
+        throw new Error(`Sono stati generati ${generatedStory.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Riprova.`);
       }
 
       setStory(generatedStory);
