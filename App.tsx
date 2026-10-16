@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import type { StoryData } from './types';
 import { generateMurderMysteryStory } from './services/adapter';
 import SetupForm from './components/SetupForm';
@@ -65,7 +65,7 @@ const qualityHighlights = [
     icon: <BookOpenIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
     title: 'Risorse editoriali',
     description:
-      'Checklist stampabili, guide per l'organizzatore e suggerimenti narrativi ti aiutano a creare esperienze memorabili.'
+      "Checklist stampabili, guide per l'organizzatore e suggerimenti narrativi ti aiutano a creare esperienze memorabili."
   },
   {
     icon: <MapIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
@@ -76,7 +76,7 @@ const qualityHighlights = [
 ];
 
 const generatorTips = [
-  'Aggiorna i temi con il pulsante AI finché non trovi l'ispirazione perfetta.',
+  "Aggiorna i temi con il pulsante AI finché non trovi l'ispirazione perfetta.",
   "Scarica i PDF per round appena generati per evitare spoiler ai partecipanti.",
   "Stampa la checklist pre-evento per non dimenticare materiali o indicazioni importanti."
 ];

@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { UserGroupIcon, BeakerIcon } from './icons';
 
 interface SetupFormProps {
@@ -60,7 +60,7 @@ const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
         },
         body: JSON.stringify({
           prompt,
-          model: 'llama-3.1-8b-instant',
+          model: 'openai/gpt-oss-20b',
           temperature: 0.9,
           top_p: 0.9,
           response_format: { type: 'json_object' },
