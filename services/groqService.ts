@@ -1,9 +1,5 @@
 import type { StoryData } from '../types';
 
-if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_API_KEY environment variable not set");
-}
-
 // Non inizializziamo direttamente il client Groq nel browser
 // per evitare l'esposizione della chiave API
 
