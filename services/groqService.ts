@@ -122,6 +122,15 @@ const storySchema = {
 };
 
 export const generateMurderMysteryStory = async (playerCount: number, theme: string): Promise<StoryData> => {
+  const schema = JSON.parse(JSON.stringify(storySchema));
+  const strictObjects = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'object') node.additionalProperties = false;
+    if (node.properties) Object.values(node.properties).forEach(strictObjects);
+    if (node.items) strictObjects(node.items);
+  };
+  strictObjects(schema);
+  const responseFormat = { type: 'json_schema', json_schema: { name: 'murder_mystery', strict: true, schema } };
   const generationPrompt = `
 Sei un maestro narratore e creatore di giochi "cena con delitto". Il tuo compito ÃƒÆ’Ã‚Â¨ generare una storia completa, avvincente e complessa basata sul tema e sul numero di giocatori forniti.
 
@@ -214,7 +223,7 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
         model: "openai/gpt-oss-120b",
         temperature: 0.7, // Riduco la temperatura per risultati piÃƒÆ’Ã‚Â¹ deterministici
         top_p: 0.95,
-        response_format: { type: "json_object" }
+        response_format: responseFormat
       })
     });
     
@@ -246,37 +255,29 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
       throw new Error('La struttura dei dati generata non ÃƒÆ’Ã‚Â¨ valida. Mancano campi obbligatori.');
     }
     
-    // Verifica e correggi il numero di personaggi se necessario
+    // Il JSON Schema di Groq non supporta minItems/maxItems: valida il conteggio
+    // e fai un solo tentativo mirato prima di rifiutare una storia incompleta.
     if (storyData.characters.length !== playerCount) {
       console.warn(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Tentativo di correzione...`);
-      
-      // Se ci sono troppi personaggi, rimuovi quelli in eccesso
-      if (storyData.characters.length > playerCount) {
-        // Rimuovi i personaggi non colpevoli per primi, se possibile
-        const nonCulprits = storyData.characters.filter(char => !char.isCulprit);
-        const culprits = storyData.characters.filter(char => char.isCulprit);
-        
-        // Calcola quanti personaggi rimuovere
-        const toRemove = storyData.characters.length - playerCount;
-        
-        if (nonCulprits.length >= toRemove) {
-          // Possiamo rimuovere solo personaggi non colpevoli
-          storyData.characters = [...culprits, ...nonCulprits.slice(0, nonCulprits.length - toRemove)];
-        } else {
-          // Dobbiamo rimuovere anche alcuni colpevoli
-          throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Impossibile correggere automaticamente.`);
-        }
-      } else {
-        // Se ci sono troppo pochi personaggi, non possiamo correggerlo automaticamente
-        throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Impossibile correggere automaticamente.`);
+      const correctionPrompt = `${generationPrompt}\n\nCORREZIONE OBBLIGATORIA: l'output precedente conteneva ${storyData.characters.length} personaggi. Rigenera da capo lo stesso caso con ESATTAMENTE ${playerCount} personaggi, né uno in più né uno in meno.`;
+      const correctionResponse = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: correctionPrompt,
+          model: 'openai/gpt-oss-120b',
+          temperature: 0.3,
+          response_format: responseFormat
+        })
+      });
+      if (!correctionResponse.ok) throw new Error(`Generazione non riuscita: servono ${playerCount} personaggi. Riprova.`);
+      const correctionResult = await correctionResponse.json();
+      try { storyData = JSON.parse(correctionResult.content) as StoryData; }
+      catch { throw new Error('La correzione AI non ha restituito JSON valido. Riprova.'); }
+      if (!storyData?.commonDocument || !Array.isArray(storyData.characters) || !storyData.solution || storyData.characters.length !== playerCount) {
+        throw new Error(`La storia generata non contiene esattamente ${playerCount} partecipanti. Riprova.`);
       }
-      
-      // Verifica che la correzione abbia funzionato
-      if (storyData.characters.length !== playerCount) {
-        throw new Error(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. La correzione automatica non ÃƒÆ’Ã‚Â¨ riuscita.`);
-      }
-      
-      console.log(`Correzione riuscita: ora ci sono ${storyData.characters.length} personaggi.`);
+      storyData = ensureUniqueCharacterNames(storyData);
     }
 
     // --- 2. VERIFICATION STEP ---
@@ -379,7 +380,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
           prompt: verificationPrompt,
           model: "openai/gpt-oss-120b",
           temperature: 0.1, // Temperatura ancora piÃƒÆ’Ã‚Â¹ bassa per risultati piÃƒÆ’Ã‚Â¹ deterministici
-          response_format: { type: "json_object" }
+          response_format: responseFormat
         })
       });
       
@@ -469,6 +470,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
     throw new Error("Failed to generate murder mystery story from API.");
   }
 };
+
 
 
 
