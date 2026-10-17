@@ -183,10 +183,10 @@ async function requestJson<T>(
       const retryHeader = response.headers.get('Retry-After');
       const messageDelay = result.error?.match(/(?:circa|in)\s+(\d+(?:[.,]\d+)?)\s*(?:secondi|s)/i)?.[1]?.replace(',', '.');
       const delaySeconds = Number(retryHeader ?? messageDelay ?? 15);
-      if (Number.isFinite(delaySeconds) && delaySeconds > 30) {
+      if (Number.isFinite(delaySeconds) && delaySeconds > 120) {
         throw new Error(`${name}: ${result.error || 'Limite temporaneo del servizio AI. Riprova più tardi.'}`);
       }
-      const safeDelaySeconds = Number.isFinite(delaySeconds) ? Math.min(30, Math.max(1, Math.ceil(delaySeconds))) : 15;
+      const safeDelaySeconds = Number.isFinite(delaySeconds) ? Math.min(120, Math.max(1, Math.ceil(delaySeconds))) : 15;
       await new Promise((resolve) => setTimeout(resolve, safeDelaySeconds * 1000));
       continue;
     }
@@ -421,17 +421,87 @@ ${correction ? `CORREGGI e rigenera il canovaccio risolvendo questi problemi: ${
 Restituisci esclusivamente JSON conforme allo schema.`;
 }
 
+type TextRepairTarget = {
+  path: string;
+  minimum: number;
+  maximum: number;
+  read: () => string;
+  write: (text: string) => void;
+};
+
+// Correct prose independently so a word-count miss cannot discard canonical facts.
+async function repairBibleText(bible: StoryBible): Promise<void> {
+  const targets: TextRepairTarget[] = [];
+  const add = (record: Record<string, any>, key: string, path: string, minimum: number, maximum: number) => {
+    if (!record || typeof record[key] !== 'string') return;
+    targets.push({ path, minimum, maximum, read: () => record[key], write: (text) => { record[key] = text; } });
+  };
+  const limits = STORY_CONTENT_LIMITS;
+  add(bible.commonDocument, 'introduction', 'commonDocument.introduction', limits.commonIntroduction, limits.commonIntroductionMax);
+  add(bible.commonDocument, 'crimeSceneMapDescription', 'commonDocument.crimeSceneMapDescription', limits.crimeScene, limits.crimeSceneMax);
+  add(bible.solution, 'motive', 'solution.motive', limits.motive, limits.motiveMax);
+  add(bible.solution, 'how', 'solution.how', limits.method, limits.methodMax);
+  add(bible.solution, 'backstory', 'solution.backstory', limits.backstory, limits.backstoryMax);
+  if (Array.isArray(bible.solution?.deductionChain)) {
+    bible.solution.deductionChain.forEach((_, index) => add(bible.solution.deductionChain, String(index), `solution.deductionChain[${index}]`, limits.deductionStep, limits.deductionStepMax));
+  }
+  if (Array.isArray(bible.characterPlans)) {
+    bible.characterPlans.forEach((plan, index) => {
+      if (!Array.isArray(plan?.cluePlan)) return;
+      plan.cluePlan.forEach((clue, clueIndex) => {
+        const path = `characterPlans[${index}].cluePlan[${clueIndex}]`;
+        add(clue, 'content', `${path}.content`, limits.clue, limits.clueMax);
+        add(clue, 'solutionLink', `${path}.solutionLink`, limits.clueSolutionLink, limits.clueSolutionLinkMax);
+        add(clue, 'organizerNote', `${path}.organizerNote`, limits.clueOrganizerNote, limits.clueOrganizerNoteMax);
+      });
+    });
+  }
+  const overview = bible.commonDocument?.characterOverviews;
+  if (typeof overview === 'string' && Array.isArray(bible.characterPlans)) {
+    const entries = overview.split(/\r?\n\s*\r?\n/u).map((entry) => entry.trim()).filter(Boolean);
+    if (entries.length === bible.characterPlans.length) {
+      entries.forEach((_, index) => targets.push({
+        path: `commonDocument.characterOverviews[${index}]`, minimum: limits.characterOverviewPerPlayer, maximum: limits.characterOverviewMaxPerPlayer,
+        read: () => entries[index],
+        write: (text) => { entries[index] = text; bible.commonDocument.characterOverviews = entries.join('\n\n'); },
+      }));
+    }
+  }
+  const invalid = () => targets.filter((target) => countWords(target.read()) < target.minimum || countWords(target.read()) > target.maximum);
+  for (let attempt = 0; attempt < 3 && invalid().length; attempt += 1) {
+    const pending = invalid();
+    for (let index = 0; index < pending.length; index += 4) {
+      const batch = pending.slice(index, index + 4);
+      const properties = Object.fromEntries(batch.map((target, i) => [`text${i}`, { type: 'string', description: `${target.path}: ${target.minimum}–${target.maximum} parole italiane.` }]));
+      const fields = batch.map((target, i) => ({
+        key: `text${i}`, path: target.path, currentWords: countWords(target.read()), minimum: target.minimum, maximum: target.maximum,
+        targetWords: Math.round((target.minimum + target.maximum) / 2), text: target.read(),
+      }));
+      const result = await requestJson<Record<string, string>>(
+        `Correzione mirata dei testi del canovaccio. Riscrivi SOLO i campi richiesti, mirando al numero targetWords, ben lontano dai limiti. Conta le parole prima di rispondere. Il conteggio considera parole e numeri, con gli apostrofi interni parte della parola. Amplia con dettagli utili coerenti; niente ripetizioni o riempitivi. Conserva nomi, fatti, orari, colpevole, relazioni e valore probatorio. I campi pubblici non devono contenere spoiler. Non aggiungere nuove prove, fatti investigativi o rivelazioni. Restituisci ogni testo nella chiave assegnata.\nCAMPI:\n${JSON.stringify(fields)}\nCONTESTO CANONICO:\n${JSON.stringify(bible)}`,
+        'bible_text_repair', { type: 'object', properties, required: Object.keys(properties) }, 0.25,
+      );
+      batch.forEach((target, i) => {
+        const text = result[`text${i}`];
+        const words = countWords(text);
+        if (typeof text === 'string' && words >= target.minimum && words <= target.maximum) target.write(text);
+      });
+    }
+  }
+}
+
 async function generateBible(playerCount: number, theme: string): Promise<StoryBible> {
   let correction = '';
   let lastIssues: string[] = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const bible = await requestJson<StoryBible>(buildBiblePrompt(playerCount, theme, correction), 'story_bible', storyBibleSchema, 0.45);
+    if (validateBible(bible, playerCount).length) await repairBibleText(bible);
     const issues = validateBible(bible, playerCount);
     if (!issues.length) return bible;
     lastIssues = issues;
     correction = issues.join(' ');
   }
-  throw new Error(`Il canovaccio per ${playerCount} partecipanti non supera ancora i controlli automatici. Problema: ${lastIssues[0] ?? 'struttura incompleta'}. Riprova con un tema più semplice.`);
+  throw new Error(`Il canovaccio per ${playerCount} partecipanti non supera ancora i controlli automatici. Problema: ${lastIssues[0] ?? 'struttura incompleta'}. La correzione automatica non è riuscita a completare questi contenuti; riprova la generazione.`);
 }
 
 function buildCharacterPrompt(bible: StoryBible, plans: CharacterPlan[], playerCount: number, correction = ''): string {
