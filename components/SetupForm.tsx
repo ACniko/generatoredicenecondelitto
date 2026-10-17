@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { UserGroupIcon, BeakerIcon } from './icons';
 
 interface SetupFormProps {
@@ -53,19 +53,33 @@ const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
         'Scrivi frasi diverse fra loro, con massimo cinque parole ciascuna.\n' +
         'Restituisci solamente un JSON con la chiave "themes" contenente una lista di stringhe.';
 
-      const response = await fetch('/api/generate', {
+      let response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           prompt,
-          model: 'llama-3.1-8b-instant',
+          model: 'openai/gpt-oss-20b',
           temperature: 0.9,
           top_p: 0.9,
           response_format: { type: 'json_object' },
         }),
       });
+
+      if (!response.ok && response.status !== 429) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt,
+            model: 'openai/gpt-oss-20b',
+            temperature: 0.7,
+            response_format: { type: 'json_object' },
+          }),
+        });
+      }
 
       if (!response.ok) {
         throw new Error(`Impossibile generare temi (HTTP ${response.status})`);
