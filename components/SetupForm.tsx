@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { UserGroupIcon, BeakerIcon } from './icons';
 
 interface SetupFormProps {
@@ -116,10 +116,6 @@ const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
       setIsFetchingThemes(false);
     }
   }, []);
-
-  useEffect(() => {
-    refreshThemes();
-  }, [refreshThemes]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();

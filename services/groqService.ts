@@ -1,396 +1,566 @@
-import type { StoryData } from '../types';
+import type { EvidenceClue, StoryData } from '../types';
+import { auditStoryQuality, STORY_CONTENT_LIMITS } from './storyQuality';
 
-// Non inizializziamo direttamente il client Groq nel browser
-// per evitare l'esposizione della chiave API
+const STORY_MODEL = 'openai/gpt-oss-120b';
+const CHARACTER_BATCH_SIZE = 2;
+const VERIFICATION_WARNING = 'La storia completa è disponibile, ma la verifica narrativa automatica non è riuscita. L’organizzatore dovrebbe controllare indizi e soluzione prima della partita.';
 
-const ensureUniqueCharacterNames = (story: StoryData): StoryData => {
-  if (!story?.characters || story.characters.length === 0) {
-    return story;
-  }
-
-  const counts = new Map<string, number>();
-  const queueMap = new Map<string, string[]>();
-
-  const updatedCharacters = story.characters.map((character, index) => {
-    const rawName = (character.name ?? '').trim();
-    const fallbackName = rawName.length > 0 ? rawName : `Personaggio ${index + 1}`;
-    const normalized = fallbackName.toLowerCase();
-    const nextCount = (counts.get(normalized) ?? 0) + 1;
-    counts.set(normalized, nextCount);
-    const uniqueName = nextCount === 1 ? fallbackName : `${fallbackName} ${nextCount}`;
-    const queue = queueMap.get(normalized) ?? [];
-    queue.push(uniqueName);
-    queueMap.set(normalized, queue);
-
-    return {
-      ...character,
-      name: uniqueName,
-    };
-  });
-
-  const usageMap = new Map<string, number>();
-  const mapName = (name: string): string => {
-    const normalized = (name ?? '').trim().toLowerCase();
-    if (!normalized) {
-      return name;
-    }
-
-    const queue = queueMap.get(normalized);
-    if (!queue || queue.length === 0) {
-      return name;
-    }
-
-    const usageCount = usageMap.get(normalized) ?? 0;
-    const index = usageCount < queue.length ? usageCount : queue.length - 1;
-    usageMap.set(normalized, usageCount + 1);
-    return queue[index];
-  };
-
-  const updatedSolution = story.solution
-    ? {
-        ...story.solution,
-        culprits: story.solution.culprits?.map(mapName) ?? story.solution.culprits,
-      }
-    : story.solution;
-
-  return {
-    ...story,
-    characters: updatedCharacters,
-    solution: updatedSolution,
-  };
+type CharacterPlan = {
+  name: string;
+  publicRole: string;
+  truth: string;
+  privateSecret: string;
+  motive: string;
+  alibiTimeline: string;
+  relationshipFacts: Array<{ characterName: string; fact: string }>;
+  cluePlan: Array<Omit<EvidenceClue, 'recipients'> & { recipients?: string[] }>;
 };
-// Definizione dello schema per la storia
-const storySchema = {
-  type: "object",
+
+type StoryBible = Pick<StoryData, 'title' | 'commonDocument' | 'solution'> & {
+  timeline: Array<{ id: string; time: string; location: string; event: string; characters: string[] }>;
+  characterPlans: CharacterPlan[];
+};
+
+const clueSchema = {
+  type: 'object',
   properties: {
-    title: { type: "string", description: 'Titolo avvincente della storia delitto e mistero in italiano.' },
+    id: { type: 'string' },
+    title: { type: 'string' },
+    round: { type: 'integer', enum: [1, 2, 3] },
+    type: { type: 'string', enum: ['decisive', 'corroborating', 'red-herring'] },
+    content: { type: 'string' },
+    solutionLink: { type: 'string' },
+    organizerNote: { type: 'string' },
+  },
+  required: ['id', 'title', 'round', 'type', 'content', 'solutionLink', 'organizerNote'],
+};
+
+const storyBibleSchema = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
     commonDocument: {
-      type: "object",
-      description: 'Contiene le informazioni iniziali condivise con tutti i giocatori.',
+      type: 'object',
       properties: {
-        introduction: { type: "string", description: 'Introduzione generale alla storia che prepara la scena, in italiano.' },
-        crimeSceneMapDescription: { type: "string", description: 'Descrizione testuale dettagliata e suggestiva della mappa della scena del crimine. Deve essere abbastanza chiara da permettere di visualizzare l\'ambiente e i punti di interesse principali (es. posizione del corpo, oggetti fuori posto, possibili vie di fuga). In italiano.' },
-        characterOverviews: { type: "string", description: 'Una breve panoramica pubblica di tutti i personaggi e delle loro relazioni reciproche note all\'inizio del gioco. Questo testo verrÃƒÆ’Ã‚Â  letto da tutti. In italiano.' }
+        introduction: { type: 'string' },
+        crimeSceneMapDescription: { type: 'string' },
+        characterOverviews: { type: 'string' },
       },
-      required: ['introduction', 'crimeSceneMapDescription', 'characterOverviews']
-    },
-    characters: {
-      type: "array",
-      description: 'Elenco dei personaggi coinvolti nella storia.',
-      items: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          isCulprit: { type: "boolean" },
-          initialDescription: { type: "string", description: 'Descrizione pubblica iniziale del personaggio, in italiano.' },
-          relationships: { type: "string", description: 'Descrizione delle relazioni del personaggio con gli altri, dal suo punto di vista privato. Potrebbe contenere dettagli non noti a tutti. In italiano.' },
-          round1Info: { type: "string", description: 'Informazioni per il Round 1. Deve includere: 1) Cosa il personaggio sa e puÃƒÆ’Ã‚Â² rivelare. 2) Un obiettivo specifico per il round (es. "Parla con X per scoprire Y"). 3) Un\'osservazione o un sospetto su un altro personaggio. In italiano.' },
-          round2Info: { type: "string", description: 'Informazioni per il Round 2. Nuovi segreti cruciali. Deve includere: 1) Nuove rivelazioni personali. 2) Un nuovo obiettivo piÃƒÆ’Ã‚Â¹ urgente. 3) Un segreto scoperto o un\'azione sospetta notata in un altro personaggio. In italiano.' },
-          round3Info: { type: "string", description: 'Informazioni per il Round 3. Colpi di scena finali. Deve includere: 1) La rivelazione finale che possiede il personaggio. 2) L\'obiettivo finale (es. "Accusa X basandoti su Y"). 3) L\'elemento chiave che collega tutti gli indizi dal suo punto di vista. In italiano.' },
-          secretsAndMotives: { type: "string", description: 'Segreti privati e potenziali moventi, anche se il personaggio ÃƒÆ’Ã‚Â¨ innocente. Utile per il giocatore per interpretare il suo ruolo, in italiano.' },
-          opinionsOnOthers: {
-            type: "array",
-            description: "Una lista delle opinioni personali e private del personaggio sugli altri partecipanti. Queste opinioni devono essere soggettive, riflettere pregiudizi, sospetti o legami segreti. Non ÃƒÆ’Ã‚Â¨ necessario avere un'opinione su tutti.",
-            items: {
-              type: "object",
-              properties: {
-                characterName: { type: "string", description: "Il nome del personaggio su cui si esprime l'opinione." },
-                opinion: { type: "string", description: "L'opinione privata, in italiano." }
-              },
-              required: ['characterName', 'opinion']
-            }
-          }
-        },
-        required: ['name', 'isCulprit', 'initialDescription', 'relationships', 'round1Info', 'round2Info', 'round3Info', 'secretsAndMotives', 'opinionsOnOthers']
-      }
+      required: ['introduction', 'crimeSceneMapDescription', 'characterOverviews'],
     },
     solution: {
-      type: "object",
+      type: 'object',
       properties: {
-        culprits: {
-          type: "array",
-          items: { type: "string" }
-        },
-        motive: { type: "string", description: 'Il vero movente del/i colpevole/i, in italiano.' },
-        how: { type: "string", description: 'Come ÃƒÆ’Ã‚Â¨ stato commesso il crimine, in dettaglio, in italiano.' },
-        backstory: { type: "string", description: 'La storia completa e i retroscena che hanno portato al delitto, in italiano.' }
+        culprits: { type: 'array', items: { type: 'string' } },
+        motive: { type: 'string' },
+        how: { type: 'string' },
+        backstory: { type: 'string' },
+        deductionChain: { type: 'array', items: { type: 'string' } },
       },
-      required: ['culprits', 'motive', 'how', 'backstory']
-    }
+      required: ['culprits', 'motive', 'how', 'backstory', 'deductionChain'],
+    },
+    timeline: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          time: { type: 'string' },
+          location: { type: 'string' },
+          event: { type: 'string' },
+          characters: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['id', 'time', 'location', 'event', 'characters'],
+      },
+    },
+    characterPlans: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          publicRole: { type: 'string' },
+          truth: { type: 'string' },
+          privateSecret: { type: 'string' },
+          motive: { type: 'string' },
+          alibiTimeline: { type: 'string' },
+          relationshipFacts: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { characterName: { type: 'string' }, fact: { type: 'string' } },
+              required: ['characterName', 'fact'],
+            },
+          },
+          cluePlan: { type: 'array', items: clueSchema },
+        },
+        required: ['name', 'publicRole', 'truth', 'privateSecret', 'motive', 'alibiTimeline', 'relationshipFacts', 'cluePlan'],
+      },
+    },
   },
-  required: ['title', 'commonDocument', 'characters', 'solution']
+  required: ['title', 'commonDocument', 'solution', 'timeline', 'characterPlans'],
 };
 
-export const generateMurderMysteryStory = async (playerCount: number, theme: string): Promise<StoryData> => {
-  const schema = JSON.parse(JSON.stringify(storySchema));
-  const strictObjects = (node: any) => {
+const characterSchema = {
+  type: 'object',
+  properties: {
+    characters: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          isCulprit: { type: 'boolean' },
+          initialDescription: { type: 'string' },
+          relationships: { type: 'string' },
+          round1Info: { type: 'string' },
+          round2Info: { type: 'string' },
+          round3Info: { type: 'string' },
+          secretsAndMotives: { type: 'string' },
+          opinionsOnOthers: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: { characterName: { type: 'string' }, opinion: { type: 'string' } },
+              required: ['characterName', 'opinion'],
+            },
+          },
+        },
+        required: ['name', 'isCulprit', 'initialDescription', 'relationships', 'round1Info', 'round2Info', 'round3Info', 'secretsAndMotives', 'opinionsOnOthers'],
+      },
+    },
+  },
+  required: ['characters'],
+};
+
+const verificationSchema = {
+  type: 'object',
+  properties: {
+    approved: { type: 'boolean' },
+    summary: { type: 'string' },
+    issues: { type: 'array', items: { type: 'string' } },
+    warnings: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['approved', 'summary', 'issues', 'warnings'],
+};
+
+function asStrictSchema(schema: Record<string, any>): Record<string, any> {
+  const copy = JSON.parse(JSON.stringify(schema));
+  const visit = (node: any): void => {
     if (!node || typeof node !== 'object') return;
     if (node.type === 'object') node.additionalProperties = false;
-    if (node.properties) Object.values(node.properties).forEach(strictObjects);
-    if (node.items) strictObjects(node.items);
+    if (node.properties) Object.values(node.properties).forEach(visit);
+    if (node.items) visit(node.items);
   };
-  strictObjects(schema);
-  const responseFormat = { type: 'json_schema', json_schema: { name: 'murder_mystery', strict: true, schema } };
-  const generationPrompt = `
-Sei un maestro narratore e creatore di giochi "cena con delitto". Il tuo compito ÃƒÆ’Ã‚Â¨ generare una storia completa, avvincente e complessa basata sul tema e sul numero di giocatori forniti.
-
-Il numero di giocatori ÃƒÆ’Ã‚Â¨: ${playerCount}.
-Il tema della storia ÃƒÆ’Ã‚Â¨: "${theme}".
-Ogni personaggio deve avere nome e cognome distinti e nessun nome puÃ² ripetersi. Garantisce che i nomi siano realistici, italiani o facilmente pronunciabili.
-
-
-La storia deve essere eccezionalmente avvincente e difficile da risolvere. Segui queste direttive con la massima precisione:
-
-Vincoli di sicurezza e conformitÃƒÂ :
-- Usa un linguaggio adatto a un pubblico generale, evitando descrizioni grafiche di violenza, dettagli macabri o contenuti sessuali espliciti.
-- Non inserire discriminazioni, incitazioni all'odio o contenuti che possano violare le Norme del programma Google AdSense.
-- Assicurati che il finale sia risolutivo e che i personaggi non glorifichino comportamenti illegali.
-
-1.  **Documento Comune Iniziale**: Crea un documento comune per tutti i giocatori che includa:
-    *   Un'introduzione suggestiva che definisca l'ambientazione e l'evento scatenante (il delitto).
-    *   Una descrizione dettagliata della mappa della scena del crimine, che i giocatori possano usare come riferimento.
-    *   Una panoramica generale e pubblica di tutti i personaggi e delle loro relazioni conosciute.
-
-2.  **Personaggi Complessi**:
-    *   **Colpevoli Nascosti**: Deve esserci almeno un colpevole. Se sono piÃƒÆ’Ã‚Â¹ di uno, la loro alleanza deve essere un segreto scioccante.
-    *   **Segreti per Tutti**: OGNI personaggio, specialmente quelli innocenti, deve avere un segreto importante, un movente credibile o un comportamento sospetto che lo renda un potenziale colpevole. Le "piste false" (red herrings) sono fondamentali.
-    *   **Relazioni Private**: La sezione "relationships" di ogni personaggio deve descrivere i suoi veri sentimenti e le interazioni segrete con gli altri, non solo le relazioni pubbliche.
-
-3.  **Rivelazione a Round Interattiva**: Le informazioni per ciascun personaggio devono essere suddivise in tre round. ÃƒÆ’Ã‹â€  CRUCIALE che ogni round non contenga solo informazioni su se stessi, ma anche e soprattutto **indizi, osservazioni e segreti scoperti riguardo ad ALTRI personaggi**.
-    *   **Round 1**: Informazioni di base, alibi e prime osservazioni sospette sugli altri. Assegna a ogni personaggio un piccolo obiettivo per iniziare le interazioni (es: "Chiedi a [Nome] del suo litigio con la vittima").
-    *   **Round 2**: Rivelazioni piÃƒÆ’Ã‚Â¹ profonde, segreti che vengono a galla, e indizi piÃƒÆ’Ã‚Â¹ concreti. Gli obiettivi diventano piÃƒÆ’Ã‚Â¹ urgenti (es: "Confronta [Nome] riguardo alla bugia che ha detto nel Round 1").
-    *   **Round 3**: Colpi di scena finali, l'indizio decisivo o la confessione parziale che permette di risolvere il caso. L'obiettivo ÃƒÆ’Ã‚Â¨ formulare un'accusa concreta.
-
-4.  **Opinioni Private (Cruciale)**: Per ogni personaggio, includi una sezione \`opinionsOnOthers\`. Questa deve contenere una lista degli altri personaggi con una breve descrizione e un'opinione *dal punto di vista del personaggio a cui appartiene la scheda*. Queste opinioni devono essere soggettive, piene di pregiudizi, sospetti o affetto, e riflettere le loro relazioni segrete e la loro personalitÃƒÆ’Ã‚Â .
-
-5.  **Coerenza Totale**: Assicurati che ogni elemento (moventi, alibi, indizi, relazioni, segreti, opinioni e la soluzione finale) sia perfettamente logico e coerente. La soluzione deve essere deducibile, sebbene difficile.
-
-6. **STRUTTURA JSON OBBLIGATORIA**: ÃƒÆ’Ã‹â€  FONDAMENTALE che tu rispetti ESATTAMENTE questa struttura JSON:
-
-Esempio di struttura:
-{
-  "title": "Titolo della Storia",
-  "commonDocument": {
-    "introduction": "Testo dell'introduzione...",
-    "crimeSceneMapDescription": "Descrizione dettagliata della scena del crimine...",
-    "characterOverviews": "Panoramica di tutti i personaggi..."
-  },
-  "characters": [
-    {
-      "name": "Nome Personaggio 1",
-      "isCulprit": true/false,
-      "initialDescription": "Descrizione iniziale...",
-      "relationships": "Relazioni con gli altri personaggi...",
-      "round1Info": "Informazioni per il round 1...",
-      "round2Info": "Informazioni per il round 2...",
-      "round3Info": "Informazioni per il round 3...",
-      "secretsAndMotives": "Segreti e motivi...",
-      "opinionsOnOthers": [
-        {
-          "characterName": "Nome Personaggio 2",
-          "opinion": "Opinione su questo personaggio..."
-        },
-        // Ripeti per tutti gli altri personaggi
-      ]
-    },
-    // Ripeti per tutti i personaggi (esattamente ${playerCount})
-  ],
-  "solution": {
-    "culprits": ["Nome Colpevole 1", "Nome Colpevole 2"],
-    "motive": "Motivo del delitto...",
-    "how": "Come ÃƒÆ’Ã‚Â¨ stato commesso il delitto...",
-    "backstory": "Storia completa dietro il delitto..."
-  }
+  visit(copy);
+  return copy;
 }
 
-Genera l'output esclusivamente in formato JSON, in lingua italiana, seguendo ESATTAMENTE lo schema fornito sopra. 
+function strictFormat(name: string, schema: Record<string, any>) {
+  return { type: 'json_schema', json_schema: { name, strict: true, schema: asStrictSchema(schema) } };
+}
 
-ATTENZIONE: ÃƒÆ’Ã‹â€  ASSOLUTAMENTE CRITICO che tu generi ESATTAMENTE ${playerCount} personaggi, nÃƒÆ’Ã‚Â© uno di piÃƒÆ’Ã‚Â¹ nÃƒÆ’Ã‚Â© uno di meno. La lista "characters" DEVE contenere esattamente ${playerCount} elementi. Questo ÃƒÆ’Ã‚Â¨ un requisito non negoziabile.
+async function requestJson<T>(
+  prompt: string,
+  name: string,
+  schema: Record<string, any>,
+  temperature = 0.5,
+  endpoint = '/api/generate',
+): Promise<T> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, model: STORY_MODEL, temperature, response_format: strictFormat(name, schema) }),
+    });
+    let result: { content?: string; error?: string; retryable?: boolean };
+    try {
+      result = await response.json();
+    } catch {
+      throw new Error('Il servizio AI ha restituito una risposta non leggibile. Riprova.');
+    }
+    if (response.status === 429 && attempt < 2) {
+      const retryHeader = response.headers.get('Retry-After');
+      const messageDelay = result.error?.match(/(?:circa|in)\s+(\d+(?:[.,]\d+)?)\s*(?:secondi|s)/i)?.[1]?.replace(',', '.');
+      const delaySeconds = Number(retryHeader ?? messageDelay ?? 15);
+      if (Number.isFinite(delaySeconds) && delaySeconds > 30) {
+        throw new Error(`${name}: ${result.error || 'Limite temporaneo del servizio AI. Riprova più tardi.'}`);
+      }
+      const safeDelaySeconds = Number.isFinite(delaySeconds) ? Math.min(30, Math.max(1, Math.ceil(delaySeconds))) : 15;
+      await new Promise((resolve) => setTimeout(resolve, safeDelaySeconds * 1000));
+      continue;
+    }
+    if (response.status === 502 && result.retryable && attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+      continue;
+    }
+    if (!response.ok || result.error) {
+      throw new Error(`${name}: ${result.error || `il servizio AI non ha completato la fase (HTTP ${response.status}).`}`);
+    }
+    if (typeof result.content !== 'string') throw new Error('Il servizio AI non ha restituito il contenuto richiesto.');
+    try {
+      return JSON.parse(result.content) as T;
+    } catch {
+      throw new Error('Il servizio AI ha restituito dati incompleti. Riprova con un altro tema.');
+    }
+  }
+  throw new Error('Il servizio AI è ancora al limite: attendi circa un minuto e riprova.');
+}
 
-Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente il tuo output prima di finalizzarlo.
-`;
+const normalizeName = (name: string) => name.trim().normalize('NFC').toLocaleLowerCase('it');
+const countWords = (value: unknown) => typeof value === 'string' ? (value.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []).length : 0;
+
+function validateBible(bible: StoryBible, playerCount: number): string[] {
+  const issues: string[] = [];
+  if (!bible || !bible.commonDocument || !bible.solution || !Array.isArray(bible.characterPlans)) {
+    return ['Il canovaccio non contiene i campi richiesti.'];
+  }
+  if (bible.characterPlans.length !== playerCount) issues.push(`Il canovaccio contiene ${bible.characterPlans.length} personaggi invece di ${playerCount}.`);
+  const names = bible.characterPlans.map((plan) => plan?.name?.trim() ?? '');
+  if (names.some((name) => !name) || new Set(names.map(normalizeName)).size !== names.length) {
+    issues.push('I nomi dei personaggi mancano o non sono univoci.');
+  }
+  const nameSet = new Set(names.map(normalizeName));
+  const common = bible.commonDocument;
+  for (const [field, minimum, label] of [
+    ['introduction', STORY_CONTENT_LIMITS.commonIntroduction, 'introduzione'],
+    ['crimeSceneMapDescription', STORY_CONTENT_LIMITS.crimeScene, 'descrizione della scena'],
+  ] as const) {
+    if (countWords(common[field]) < minimum) issues.push(`Il campo ${label} deve contenere almeno ${minimum} parole.`);
+  }
+  for (const [field, maximum, label] of [
+    ['introduction', STORY_CONTENT_LIMITS.commonIntroductionMax, 'introduzione'],
+    ['crimeSceneMapDescription', STORY_CONTENT_LIMITS.crimeSceneMax, 'descrizione della scena'],
+  ] as const) {
+    if (countWords(common[field]) > maximum) issues.push(`Il campo ${label} deve contenere al massimo ${maximum} parole.`);
+  }
+  if (countWords(common.characterOverviews) < playerCount * STORY_CONTENT_LIMITS.characterOverviewPerPlayer) {
+    issues.push(`Il riepilogo dei personaggi deve contenere almeno ${playerCount * STORY_CONTENT_LIMITS.characterOverviewPerPlayer} parole, con un profilo per ogni partecipante.`);
+  }
+  if (countWords(common.characterOverviews) > playerCount * STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer) {
+    issues.push(`Il riepilogo dei personaggi deve contenere al massimo ${playerCount * STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer} parole.`);
+  }
+  const overviewEntries = typeof common.characterOverviews === 'string'
+    ? common.characterOverviews.split(/\r?\n\s*\r?\n/u).map((entry) => entry.trim()).filter(Boolean)
+    : [];
+  if (overviewEntries.length !== playerCount) issues.push(`Il riepilogo del cast deve contenere un paragrafo distinto per ciascuno dei ${playerCount} personaggi.`);
+  for (const entry of overviewEntries) {
+    const entryWords = countWords(entry);
+    if (entryWords < STORY_CONTENT_LIMITS.characterOverviewPerPlayer || entryWords > STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer) {
+      issues.push(`Ogni profilo pubblico deve contenere ${STORY_CONTENT_LIMITS.characterOverviewPerPlayer}–${STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer} parole.`);
+    }
+  }
+  for (const name of names) {
+    if (name && !common.characterOverviews?.toLocaleLowerCase('it').includes(name.toLocaleLowerCase('it'))) {
+      issues.push(`Il riepilogo dei personaggi deve citare «${name}».`);
+    }
+  }
+  if (countWords(bible.solution.motive) < STORY_CONTENT_LIMITS.motive) issues.push(`Il movente della soluzione deve contenere almeno ${STORY_CONTENT_LIMITS.motive} parole.`);
+  if (countWords(bible.solution.how) < STORY_CONTENT_LIMITS.method) issues.push(`La ricostruzione del delitto deve contenere almeno ${STORY_CONTENT_LIMITS.method} parole.`);
+  if (countWords(bible.solution.backstory) < STORY_CONTENT_LIMITS.backstory) issues.push(`Il retroscena della soluzione deve contenere almeno ${STORY_CONTENT_LIMITS.backstory} parole.`);
+  if (countWords(bible.solution.motive) > STORY_CONTENT_LIMITS.motiveMax) issues.push(`Il movente della soluzione deve contenere al massimo ${STORY_CONTENT_LIMITS.motiveMax} parole.`);
+  if (countWords(bible.solution.how) > STORY_CONTENT_LIMITS.methodMax) issues.push(`La ricostruzione del delitto deve contenere al massimo ${STORY_CONTENT_LIMITS.methodMax} parole.`);
+  if (countWords(bible.solution.backstory) > STORY_CONTENT_LIMITS.backstoryMax) issues.push(`Il retroscena della soluzione deve contenere al massimo ${STORY_CONTENT_LIMITS.backstoryMax} parole.`);
+  if (!Array.isArray(bible.solution.deductionChain) || bible.solution.deductionChain.length < STORY_CONTENT_LIMITS.deductionSteps) {
+    issues.push(`La deduzione deve contenere almeno ${STORY_CONTENT_LIMITS.deductionSteps} passaggi.`);
+  } else {
+    if (bible.solution.deductionChain.length > STORY_CONTENT_LIMITS.deductionStepsMax) issues.push(`La deduzione deve contenere al massimo ${STORY_CONTENT_LIMITS.deductionStepsMax} passaggi.`);
+    bible.solution.deductionChain.forEach((step, index) => {
+    if (countWords(step) < STORY_CONTENT_LIMITS.deductionStep) issues.push(`Il passaggio ${index + 1} della deduzione deve contenere almeno ${STORY_CONTENT_LIMITS.deductionStep} parole.`);
+    if (countWords(step) > STORY_CONTENT_LIMITS.deductionStepMax) issues.push(`Il passaggio ${index + 1} della deduzione deve contenere al massimo ${STORY_CONTENT_LIMITS.deductionStepMax} parole.`);
+    });
+  }
+  const timeline = bible.timeline;
+  if (!Array.isArray(timeline) || timeline.length < 4) {
+    issues.push('La cronologia canonica deve contenere almeno quattro eventi.');
+  } else {
+    const ids = new Set<string>();
+    let previousTime = -1;
+    timeline.forEach((event, index) => {
+      const minutes = typeof event?.time === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(event.time)
+        ? Number(event.time.slice(0, 2)) * 60 + Number(event.time.slice(3))
+        : -1;
+      if (!event?.id?.trim() || ids.has(event.id)) issues.push('Gli eventi della cronologia devono avere identificativi univoci.');
+      else ids.add(event.id);
+      if (minutes < 0 || minutes <= previousTime) issues.push(`La cronologia deve avere orari HH:MM validi e in ordine crescente (evento ${index + 1}).`);
+      previousTime = minutes;
+      if (!event?.location?.trim() || !event?.event?.trim() || !Array.isArray(event.characters) || !event.characters.length) {
+        issues.push(`L’evento ${index + 1} della cronologia deve specificare luogo, fatto e personaggi coinvolti.`);
+      } else if (event.characters.some((name) => !nameSet.has(normalizeName(name)))) {
+        issues.push(`L’evento ${index + 1} cita un personaggio assente dal cast.`);
+      }
+    });
+  }
+  const culpritNames = bible.solution.culprits ?? [];
+  if (culpritNames.length !== 1 || culpritNames.some((name) => !nameSet.has(normalizeName(name)))) {
+    issues.push('La soluzione deve indicare un solo colpevole presente nel cast.');
+  }
+  const decisiveRecipients = new Set<string>();
+  const clueIds = new Set<string>();
+  const roundsWithDecisiveClue = new Set<number>();
+  let corroboratingCount = 0;
+  let redHerringCount = 0;
+  for (const plan of bible.characterPlans) {
+    const relationTargets = Array.isArray(plan?.relationshipFacts) ? plan.relationshipFacts.map((relation) => normalizeName(relation.characterName)) : [];
+    if (relationTargets.length !== 3 || new Set(relationTargets).size !== 3 || relationTargets.some((target) => target === normalizeName(plan.name) || !nameSet.has(target))) {
+      issues.push(`Il personaggio «${plan?.name || 'senza nome'}» deve avere tre relazioni distinte con altri personaggi del cast.`);
+    }
+    if (Array.isArray(plan?.relationshipFacts) && plan.relationshipFacts.some((relation) => countWords(relation.fact) < 12)) {
+      issues.push(`Le relazioni di «${plan?.name || 'senza nome'}» devono descrivere fatti specifici e completi.`);
+    }
+    const clues = plan?.cluePlan;
+    if (!Array.isArray(clues) || clues.length !== 3 || new Set(clues.map((clue) => clue.round)).size !== 3) {
+      issues.push(`La scheda di «${plan?.name || 'personaggio senza nome'}» deve avere un indizio per ciascuno dei tre round.`);
+      continue;
+    }
+    for (const clue of clues) {
+      if (!clue?.id || clueIds.has(clue.id)) issues.push('Gli identificativi degli indizi devono essere presenti e univoci.');
+      else clueIds.add(clue.id);
+      if (![1, 2, 3].includes(clue.round) || !['decisive', 'corroborating', 'red-herring'].includes(clue.type)) {
+        issues.push(`Un indizio assegnato a «${plan.name}» ha round o categoria non validi.`);
+      }
+      if (!clue.title?.trim() || !clue.content?.trim() || !clue.solutionLink?.trim() || !clue.organizerNote?.trim()) {
+        issues.push(`Un indizio assegnato a «${plan.name}» è incompleto.`);
+      }
+      if (countWords(clue.content) < STORY_CONTENT_LIMITS.clue || countWords(clue.content) > STORY_CONTENT_LIMITS.clueMax) {
+        issues.push(`L’indizio «${clue.title || 'senza titolo'}» deve contenere ${STORY_CONTENT_LIMITS.clue}–${STORY_CONTENT_LIMITS.clueMax} parole.`);
+      }
+      if (countWords(clue.solutionLink) < STORY_CONTENT_LIMITS.clueSolutionLink || countWords(clue.solutionLink) > STORY_CONTENT_LIMITS.clueSolutionLinkMax) {
+        issues.push(`Il collegamento dell’indizio «${clue.title || 'senza titolo'}» deve contenere ${STORY_CONTENT_LIMITS.clueSolutionLink}–${STORY_CONTENT_LIMITS.clueSolutionLinkMax} parole.`);
+      }
+      if (countWords(clue.organizerNote) < STORY_CONTENT_LIMITS.clueOrganizerNote || countWords(clue.organizerNote) > STORY_CONTENT_LIMITS.clueOrganizerNoteMax) {
+        issues.push(`La nota organizzatore dell’indizio «${clue.title || 'senza titolo'}» deve contenere ${STORY_CONTENT_LIMITS.clueOrganizerNote}–${STORY_CONTENT_LIMITS.clueOrganizerNoteMax} parole.`);
+      }
+      if (clue.type === 'decisive') {
+        roundsWithDecisiveClue.add(clue.round);
+        if (!culpritNames.some((culprit) => normalizeName(culprit) === normalizeName(plan.name))) decisiveRecipients.add(normalizeName(plan.name));
+      }
+      if (clue.type === 'corroborating') corroboratingCount += 1;
+      if (clue.type === 'red-herring') redHerringCount += 1;
+    }
+  }
+  if (roundsWithDecisiveClue.size < 3) issues.push('Serve almeno un indizio decisivo in ciascuno dei tre round.');
+  if (decisiveRecipients.size < 3) issues.push('Gli indizi decisivi devono essere assegnati ad almeno tre innocenti distinti.');
+  if (!corroboratingCount) issues.push('Serve almeno un indizio corroborante.');
+  if (!redHerringCount) issues.push('Serve almeno un depistaggio plausibile.');
+  return issues;
+}
+
+function validateCharacterBatch(characters: StoryData['characters'], expectedPlans: CharacterPlan[], allNames: string[]): string[] {
+  if (!Array.isArray(characters) || characters.length !== expectedPlans.length) {
+    return [`La fase schede ha restituito ${characters?.length ?? 0} personaggi invece dei ${expectedPlans.length} richiesti.`];
+  }
+  const expected = new Set(expectedPlans.map((plan) => normalizeName(plan.name)));
+  const received = new Set(characters.map((character) => normalizeName(character?.name ?? '')));
+  const issues: string[] = [];
+  if (received.size !== characters.length || [...expected].some((name) => !received.has(name))) {
+    issues.push('I nomi restituiti non coincidono con quelli del canovaccio.');
+  }
+  for (const character of characters) {
+    const ownName = normalizeName(character.name);
+    const minimumLengths: Array<[keyof StoryData['characters'][number], number]> = [
+      ['initialDescription', STORY_CONTENT_LIMITS.initialDescription],
+      ['relationships', STORY_CONTENT_LIMITS.relationships],
+      ['round1Info', STORY_CONTENT_LIMITS.roundInfo],
+      ['round2Info', STORY_CONTENT_LIMITS.roundInfo],
+      ['round3Info', STORY_CONTENT_LIMITS.roundInfo],
+      ['secretsAndMotives', STORY_CONTENT_LIMITS.secretsAndMotives],
+    ];
+    for (const [field, minimum] of minimumLengths) {
+      const actual = countWords(character[field]);
+      if (actual < minimum) issues.push(`La scheda di «${character.name}» è troppo breve in ${field} (${actual} parole, ne servono almeno ${minimum}).`);
+    }
+    const maximumLengths: Array<[keyof StoryData['characters'][number], number]> = [
+      ['initialDescription', STORY_CONTENT_LIMITS.initialDescriptionMax], ['relationships', STORY_CONTENT_LIMITS.relationshipsMax],
+      ['round1Info', STORY_CONTENT_LIMITS.roundInfoMax], ['round2Info', STORY_CONTENT_LIMITS.roundInfoMax],
+      ['round3Info', STORY_CONTENT_LIMITS.roundInfoMax], ['secretsAndMotives', STORY_CONTENT_LIMITS.secretsAndMotivesMax],
+    ];
+    for (const [field, maximum] of maximumLengths) {
+      const actual = countWords(character[field]);
+      if (actual > maximum) issues.push(`La scheda di «${character.name}» è troppo lunga in ${field} (${actual} parole, massimo ${maximum}).`);
+    }
+    for (const [field, content] of [['round1Info', character.round1Info], ['round2Info', character.round2Info], ['round3Info', character.round3Info]] as const) {
+      for (const label of ['Fatti che conosci:', 'Cosa puoi rivelare:', 'Obiettivo concreto:', 'Informazione nuova:']) {
+        if (!content.includes(label)) issues.push(`La scheda di «${character.name}» in ${field} deve includere «${label}».`);
+      }
+      const objective = content.match(/Obiettivo concreto:\s*([\s\S]*?)(?=Informazione nuova:|$)/u)?.[1] ?? '';
+      if (!allNames.some((name) => normalizeName(name) !== ownName && objective.toLocaleLowerCase('it').includes(name.toLocaleLowerCase('it')))) {
+        issues.push(`L’obiettivo del round in ${field} deve nominare un altro personaggio.`);
+      }
+    }
+    const opinions = character.opinionsOnOthers;
+    const expectedOpinions = allNames.filter((name) => normalizeName(name) !== ownName).map(normalizeName);
+    if (!Array.isArray(opinions) || opinions.length !== expectedOpinions.length) {
+      issues.push(`La scheda di «${character.name}» deve contenere un’opinione su ciascuno degli altri partecipanti.`);
+    } else {
+      opinions.forEach((opinion) => {
+        const actual = countWords(opinion.opinion);
+        if (actual < STORY_CONTENT_LIMITS.opinionMin || actual > STORY_CONTENT_LIMITS.opinionMax) issues.push(`L’opinione di «${character.name}» su «${opinion.characterName}» deve contenere ${STORY_CONTENT_LIMITS.opinionMin}–${STORY_CONTENT_LIMITS.opinionMax} parole (${actual} trovate).`);
+      });
+      const opinionNames = opinions.map((opinion) => normalizeName(opinion.characterName));
+      if (new Set(opinionNames).size !== opinionNames.length || expectedOpinions.some((name) => !opinionNames.includes(name))) {
+        issues.push(`Le opinioni nella scheda di «${character.name}» hanno nomi mancanti o duplicati.`);
+      }
+    }
+  }
+  return issues;
+}
+
+function buildBiblePrompt(playerCount: number, theme: string, correction = ''): string {
+  return `Fase: bibbia narrativa. Il numero di giocatori è: ${playerCount}. Tema: ${JSON.stringify(theme)}.
+Progetta un caso originale, coerente e risolvibile per una cena con delitto italiana da 2–3 ore. Questa è la fonte canonica di ogni fatto: le successive schede dovranno rispettarla.
+
+La storia ha un solo colpevole, un movente credibile, una cronologia verificabile e una catena di deduzioni spiegata in passaggi. La soluzione è dimostrabile usando solo informazioni distribuibili ai partecipanti. Il documento comune non deve rivelare colpevole né contenere spoiler.
+
+Restituisci esattamente ${playerCount} piani personaggio con nomi e cognomi distinti. Ogni piano definisce ruolo pubblico, verità personale, segreto, movente o ragione del sospetto, alibi con orari e tre relazioni chiave coerenti; limita relationshipFacts a tre legami significativi per personaggio, non a tutti i possibili abbinamenti. Per ogni personaggio crea ESATTAMENTE tre indizi (uno per ciascun round), identificati univocamente. Ogni indizio è consegnato privatamente a quel personaggio; non inserire nella sua scheda informazioni che non potrebbe conoscere. Nel canovaccio descrivi ciascun indizio in 40–55 parole; il collegamento alla soluzione deve avere 15–45 parole e spiegare quale fatto verifica; la nota spoiler dell’organizzatore deve avere 10–45 parole. Distribuisci almeno tre indizi decisivi, uno per round e a destinatari innocenti differenti; includi indizi corroboranti e depistaggi con una spiegazione vera e non contraddittoria. Nessun depistaggio deve rendere falsa la soluzione.
+
+Rispetta i limiti del dossier: introduzione comune 200–350 parole; descrizione della scena 200–350; profili nel riepilogo del cast 45–70 parole ciascuno, uno per paragrafo separato da una riga vuota e con nome completo; movente 120–200; ricostruzione del metodo 120–200; retroscena 200–300. La catena della soluzione deve avere 4–6 passaggi, ciascuno di 25–80 parole. Includi una cronologia canonica di almeno quattro eventi con identificativi univoci, orari HH:MM in ordine strettamente crescente, luogo, evento e nomi dei presenti. Deve coprire arrivi, ultimo avvistamento, finestra del delitto e scoperta del corpo. Non usare testo riempitivo o ripetuto: ogni paragrafo deve aggiungere informazioni utili.
+
+Costruisci una trama originale, non grafica e adatta a un pubblico generale. Dai alle tre fasi un’escalation: sospetti e alibi nel primo round, riscontri e confronti nel secondo, collegamento probatorio e accusa nel terzo. Il crimine e il metodo devono rispettare i dettagli della scena e gli orari.
+${correction ? `CORREGGI e rigenera il canovaccio risolvendo questi problemi: ${correction}` : ''}
+Restituisci esclusivamente JSON conforme allo schema.`;
+}
+
+async function generateBible(playerCount: number, theme: string): Promise<StoryBible> {
+  let correction = '';
+  let lastIssues: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const bible = await requestJson<StoryBible>(buildBiblePrompt(playerCount, theme, correction), 'story_bible', storyBibleSchema, 0.45);
+    const issues = validateBible(bible, playerCount);
+    if (!issues.length) return bible;
+    lastIssues = issues;
+    correction = issues.join(' ');
+  }
+  throw new Error(`Il canovaccio per ${playerCount} partecipanti non supera ancora i controlli automatici. Problema: ${lastIssues[0] ?? 'struttura incompleta'}. Riprova con un tema più semplice.`);
+}
+
+function buildCharacterPrompt(bible: StoryBible, plans: CharacterPlan[], playerCount: number, correction = ''): string {
+  const safeBible = {
+    title: bible.title,
+    commonDocument: bible.commonDocument,
+    timeline: bible.timeline,
+    cast: bible.characterPlans.map(({ name, publicRole, relationshipFacts }) => ({ name, publicRole, relationshipFacts })),
+    selectedCharacterPlans: plans,
+    solutionFactsForInternalConsistency: bible.solution,
+  };
+  return `Fase: schede personaggio. Il numero di giocatori è: ${playerCount}. Genera le schede soltanto per questi nomi, senza aggiungerne o ometterne: ${plans.map((plan) => plan.name).join(', ')}.
+La bibbia seguente è canonica. Non cambiare nome, ruolo, alibi, movente, relazioni, fatti o indizi. Ogni fatto contraddittorio è un errore. La soluzione è contesto privato per te: non rivelare colpevole, metodo o soluzione nelle descrizioni pubbliche, nei riassunti, nelle relazioni o nelle schede degli innocenti. Il colpevole può ricevere istruzioni private coerenti per interpretare il proprio segreto. Non copiare le note spoiler nelle schede.
+
+Obiettivo: ogni scheda deve sostenere una partita di 2–3 ore ed essere sufficientemente ricca per circa 4–6 pagine stampate. Scrivi in italiano naturale, con paragrafi e dettagli concreti. Rispetta queste soglie: descrizione pubblica 100–140 parole; relazioni private 180–260; ciascun round 150–190; segreti e movente 180–260; ogni opinione sugli altri 45–65 parole. Le opinioni sono una per ciascuno degli altri personaggi, quindi il totale varia con il numero di partecipanti; non comprimere i testi per un limite complessivo.
+
+Ogni round deve contenere queste sezioni etichettate esattamente: «Fatti che conosci:», «Cosa puoi rivelare:», «Obiettivo concreto:» e «Informazione nuova:». L’obiettivo deve nominare un altro personaggio e descrivere un’azione realizzabile al tavolo. La cronologia canonica è: ${JSON.stringify(bible.timeline)}. Ogni round avanza l’indagine con fatti compatibili con cronologia e indizi. Le opinioni devono riflettere relazioni e pregiudizi specifici, non ripetere la stessa formula. Includi un’opinione per tutti gli altri ${playerCount - 1} personaggi, con nomi esatti dal cast. Rispetta i limiti di conoscenza: un personaggio non sa automaticamente ciò che un altro custodisce nel proprio piano o indizio.
+
+Bibbia canonica:
+${JSON.stringify(safeBible)}
+${correction ? `Correzione per questo batch: ${correction}` : ''}
+Restituisci solo l'oggetto JSON con l'array characters e i ${plans.length} nomi indicati.`;
+}
+
+async function generateCharacterBatch(bible: StoryBible, plans: CharacterPlan[], playerCount: number): Promise<StoryData['characters']> {
+  const names = bible.characterPlans.map((plan) => plan.name);
+  let correction = '';
+  let lastIssues: string[] = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await requestJson<{ characters: StoryData['characters'] }>(
+      buildCharacterPrompt(bible, plans, playerCount, correction),
+      'character_batch',
+      characterSchema,
+      0.6,
+    );
+    const issues = validateCharacterBatch(result.characters, plans, names);
+    if (!issues.length) {
+      const culpritNames = new Set(bible.solution.culprits.map(normalizeName));
+      return result.characters.map((character) => ({
+        ...character,
+        name: plans.find((plan) => normalizeName(plan.name) === normalizeName(character.name))!.name,
+        isCulprit: culpritNames.has(normalizeName(character.name)),
+      }));
+    }
+    lastIssues = issues;
+    correction = issues.join(' ');
+  }
+  throw new Error(`Non è stato possibile completare le schede di ${plans.map((plan) => plan.name).join(' e ')}. Controllo non superato: ${lastIssues[0] ?? 'contenuti incompleti'}. Riprova la generazione.`);
+}
+
+function composeStory(bible: StoryBible, characters: StoryData['characters']): StoryData {
+  const evidence = bible.characterPlans.flatMap((plan) => plan.cluePlan.map((clue) => ({
+    ...clue,
+    recipients: [plan.name],
+  }))) as EvidenceClue[];
+  return {
+    title: bible.title,
+    commonDocument: bible.commonDocument,
+    characters,
+    evidence,
+    solution: bible.solution,
+  };
+}
+
+function buildVerificationPrompt(story: StoryData, playerCount: number, timeline: StoryBible['timeline']): string {
+  return `Fase: verifica narrativa. Il numero di giocatori è: ${playerCount}.
+Esamina questa storia completa come revisore indipendente di un gioco dal vivo. Confronta la cronologia canonica con alibi e orari, relazioni, round, indizi, destinatari, soluzione e deduzione. Controlla che il colpevole e il metodo non siano dichiarati nelle informazioni pubbliche o nelle schede degli innocenti; che ogni passaggio della deduzione sia sostenuto da indizi ottenibili; che i depistaggi siano spiegabili senza contraddire i fatti; che nomi e rapporti restino coerenti. Non modificare né riscrivere la storia: restituisci un rapporto JSON. approved è true solo se la soluzione è deducibile e non trovi contraddizioni sostanziali. Elenca in issues i problemi bloccanti e in warnings le migliorie facoltative. Sii concreto e cita nomi e indizi.
+
+CRONOLOGIA CANONICA:
+${JSON.stringify(timeline)}
+
+STORIA:
+${JSON.stringify(story)}
+Rispondi esclusivamente con JSON conforme allo schema.`;
+}
+
+function verificationWarning(report?: { summary?: string; issues?: string[] }): string {
+  const detail = [...(report?.issues ?? []), report?.summary ?? ''].filter(Boolean).join(' ');
+  return detail ? `${VERIFICATION_WARNING} Esito: ${detail}` : VERIFICATION_WARNING;
+}
+
+export const generateMurderMysteryStory = async (playerCount: number, theme: string): Promise<StoryData> => {
+  if (!Number.isInteger(playerCount) || playerCount < 4 || playerCount > 12) {
+    throw new Error('Scegli un numero di partecipanti compreso tra 4 e 12.');
+  }
+  if (!theme?.trim()) throw new Error('Scegli un tema prima di generare la storia.');
+
+  let story: StoryData;
+  let canonicalTimeline: StoryBible['timeline'] = [];
+  try {
+    const bible = await generateBible(playerCount, theme.trim());
+    canonicalTimeline = bible.timeline;
+    const characters: StoryData['characters'] = [];
+    for (let index = 0; index < bible.characterPlans.length; index += CHARACTER_BATCH_SIZE) {
+      const batch = bible.characterPlans.slice(index, index + CHARACTER_BATCH_SIZE);
+      characters.push(...await generateCharacterBatch(bible, batch, playerCount));
+    }
+    story = composeStory(bible, characters);
+  } catch (error) {
+    console.error('Errore nella generazione narrativa Groq:', error instanceof Error ? error.message : 'Errore sconosciuto.');
+    if (error instanceof Error) throw error;
+    throw new Error('Non è stato possibile completare la storia con l’AI. Attendi qualche secondo e riprova.');
+  }
+
+  const originalAudit = auditStoryQuality(story, playerCount);
+  if (!originalAudit.valid) {
+    throw new Error(`La storia generata non ha superato i controlli di completezza: ${originalAudit.errors.slice(0, 3).join(' ')}`);
+  }
 
   try {
-    // --- 1. GENERATION STEP ---
-    // Utilizziamo fetch per chiamare un'API serverless che gestisce la chiamata a Groq
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        prompt: generationPrompt,
-        model: "openai/gpt-oss-120b",
-        temperature: 0.7, // Riduco la temperatura per risultati piÃƒÆ’Ã‚Â¹ deterministici
-        top_p: 0.95,
-        response_format: responseFormat
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API request failed with status ${response.status}`);
+    const report = await requestJson<{ approved: boolean; summary: string; issues: string[]; warnings: string[] }>(
+      buildVerificationPrompt(story, playerCount, canonicalTimeline),
+      'story_verification',
+      verificationSchema,
+      0.1,
+      '/api/verify',
+    );
+    const verifiedAudit = auditStoryQuality(story, playerCount);
+    if (!report.approved || report.issues.length || !verifiedAudit.valid) {
+      const issues = [...report.issues, ...verifiedAudit.errors];
+      console.warn('La revisione narrativa ha segnalato problemi; si restituisce la storia generata con avviso.', issues);
+      return { ...story, verificationWarning: verificationWarning({ summary: report.summary, issues }) };
     }
-    
-    const result = await response.json();
-    
-    // Verifica se c'ÃƒÆ’Ã‚Â¨ un errore nella risposta
-    if (result.error) {
-      console.warn(`API error: ${result.error}`);
-      throw new Error(`Error calling Groq API: ${result.error}`);
+    if (report.warnings.length) {
+      return { ...story, verificationWarning: `La storia è stata verificata; l’organizzatore può valutare queste note: ${report.warnings.join(' ')}` };
     }
-    
-    const jsonText = result.content.trim();
-    
-    // Verifica che il testo sia un JSON valido
-    let storyData;
-    try {
-      storyData = JSON.parse(jsonText) as StoryData;
-    } catch (error) {
-      console.error('Failed to parse JSON response:', error);
-      throw new Error('La risposta dell\'API non ÃƒÆ’Ã‚Â¨ in formato JSON valido.');
-    }
-
-    // Verifica che la struttura dei dati sia valida
-    if (!storyData || !storyData.commonDocument || !storyData.characters || !storyData.solution) {
-      throw new Error('La struttura dei dati generata non ÃƒÆ’Ã‚Â¨ valida. Mancano campi obbligatori.');
-    }
-    
-    // Il JSON Schema di Groq non supporta minItems/maxItems: valida il conteggio
-    // e fai un solo tentativo mirato prima di rifiutare una storia incompleta.
-    if (storyData.characters.length !== playerCount) {
-      console.warn(`Il modello ha generato ${storyData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Tentativo di correzione...`);
-      const correctionPrompt = `${generationPrompt}\n\nCORREZIONE OBBLIGATORIA: l'output precedente conteneva ${storyData.characters.length} personaggi. Rigenera da capo lo stesso caso con ESATTAMENTE ${playerCount} personaggi, né uno in più né uno in meno.`;
-      const correctionResponse = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: correctionPrompt,
-          model: 'openai/gpt-oss-120b',
-          temperature: 0.3,
-          response_format: responseFormat
-        })
-      });
-      if (!correctionResponse.ok) throw new Error(`Generazione non riuscita: servono ${playerCount} personaggi. Riprova con un tema più breve o un numero inferiore di partecipanti.`);
-      const correctionResult = await correctionResponse.json();
-      try { storyData = JSON.parse(correctionResult.content) as StoryData; }
-      catch { throw new Error('La correzione AI non ha restituito JSON valido. Riprova.'); }
-      if (!storyData?.commonDocument || !Array.isArray(storyData.characters) || !storyData.solution || storyData.characters.length !== playerCount) {
-        throw new Error(`La storia generata non contiene esattamente ${playerCount} partecipanti. Riprova con un tema più breve o un numero inferiore di partecipanti.`);
-      }
-      storyData = ensureUniqueCharacterNames(storyData);
-    }
-
-    // --- 2. VERIFICATION STEP ---
-    const verificationPrompt = `
-Sei un detective esperto. Verifica la coerenza logica e narrativa della storia JSON qui sotto. Controlla alibi, indizi, movente, soluzione, relazioni e colpevoli. Correggi solo contraddizioni evidenti con modifiche minime. Mantieni tutti i ${playerCount} personaggi e tutti i campi presenti. Restituisci solo l'oggetto JSON completo, senza spiegazioni.
-
-Ecco i dati della storia da esaminare:
-${JSON.stringify(storyData, null, 2)}
-
-Restituisci la storia completa senza rimuovere personaggi o campi.
-`;
-    
-    try {
-      // Utilizziamo fetch per chiamare un'API serverless che gestisce la chiamata a Groq
-      const verificationResponse = await fetch('/api/verify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: verificationPrompt,
-          model: "openai/gpt-oss-120b",
-          temperature: 0.1, // Temperatura ancora piÃƒÆ’Ã‚Â¹ bassa per risultati piÃƒÆ’Ã‚Â¹ deterministici
-          response_format: responseFormat
-        })
-      });
-      
-      if (!verificationResponse.ok) {
-        throw new Error(`API request failed with status ${verificationResponse.status}`);
-      }
-      
-      const verificationResult = await verificationResponse.json();
-      
-      // Verifica se c'ÃƒÆ’Ã‚Â¨ un errore nella risposta di verifica
-      if (verificationResult.error) {
-        console.warn(`API verification error: ${verificationResult.error}`);
-        return { ...storyData, verificationWarning: 'La storia è stata generata, ma la verifica automatica non è riuscita. Controlla la soluzione prima della partita.' } as StoryData;
-      }
-      
-      const verifiedJsonText = verificationResult.content.trim();
-      
-      // Verifica che il testo sia un JSON valido
-      let verifiedStoryData;
-      try {
-        verifiedStoryData = JSON.parse(verifiedJsonText) as StoryData;
-      } catch (error) {
-        console.error('Failed to parse JSON verification response:', error);
-        return storyData; // Fallback alla storia originale
-      }
-
-      // Verifica che la struttura dei dati sia valida
-      if (!verifiedStoryData || !verifiedStoryData.commonDocument || !verifiedStoryData.characters || !verifiedStoryData.solution) {
-        console.warn("La struttura dei dati verificata non ÃƒÆ’Ã‚Â¨ valida. Mancano campi obbligatori. VerrÃƒÆ’Ã‚Â  utilizzata la storia originale.");
-        return { ...storyData, verificationWarning: 'La storia è stata generata, ma la verifica automatica non è riuscita. Controlla la soluzione prima della partita.' } as StoryData;
-      }
-      
-      // Verifica che il numero di personaggi sia corretto
-      if (verifiedStoryData.characters.length !== playerCount) {
-        console.warn(`La verifica ha prodotto ${verifiedStoryData.characters.length} personaggi, ma ne erano richiesti ${playerCount}. VerrÃƒÆ’Ã‚Â  utilizzata la storia originale.`);
-        return storyData;
-      }
-      
-      // Verifica che ci sia almeno un colpevole nella soluzione
-      if (!verifiedStoryData.solution.culprits || verifiedStoryData.solution.culprits.length === 0) {
-        console.warn("La soluzione non contiene colpevoli. VerrÃƒÆ’Ã‚Â  utilizzata la storia originale.");
-        return storyData;
-      }
-      
-      // Verifica che i colpevoli esistano tra i personaggi
-      const characterNames = verifiedStoryData.characters.map(c => c.name);
-      const allCulpritsExist = verifiedStoryData.solution.culprits.every(culprit => 
-        characterNames.includes(culprit)
-      );
-      
-      if (!allCulpritsExist) {
-        console.warn("Alcuni colpevoli nella soluzione non esistono tra i personaggi. VerrÃƒÆ’Ã‚Â  utilizzata la storia originale.");
-        return storyData;
-      }
-      
-      // Verifica che il flag isCulprit sia coerente con la lista dei colpevoli
-      const culpritFlags = verifiedStoryData.characters.map(c => ({
-        name: c.name,
-        isCulprit: c.isCulprit
-      }));
-      
-      const inconsistentCulprits = culpritFlags.filter(c => 
-        (verifiedStoryData.solution.culprits.includes(c.name) && !c.isCulprit) || 
-        (!verifiedStoryData.solution.culprits.includes(c.name) && c.isCulprit)
-      );
-      
-      if (inconsistentCulprits.length > 0) {
-        console.warn("Incoerenza tra i flag isCulprit e la lista dei colpevoli nella soluzione. Correzione automatica...");
-        // Correggi l'incoerenza
-        verifiedStoryData.characters = verifiedStoryData.characters.map(c => ({
-          ...c,
-          isCulprit: verifiedStoryData.solution.culprits.includes(c.name)
-        }));
-      }
-
-      verifiedStoryData = ensureUniqueCharacterNames(verifiedStoryData);
-      return verifiedStoryData;
-
-    } catch (verificationError) {
-      console.error("Errore durante il passaggio di verifica dell'IA:", verificationError);
-      console.warn("A causa di un errore nella verifica, verrÃƒÆ’Ã‚Â  utilizzata la storia non verificata.");
-      return { ...storyData, verificationWarning: 'La storia è stata generata, ma la verifica automatica non è riuscita. Controlla la soluzione prima della partita.' } as StoryData;
-    }
-
+    return story;
   } catch (error) {
-    console.error("Error calling Groq API:", error);
-    throw new Error("Failed to generate murder mystery story from API.");
+    console.warn('La verifica AI non è riuscita; si conserva la storia completa generata.', error);
+    return { ...story, verificationWarning: verificationWarning() };
   }
 };
-
-
-
