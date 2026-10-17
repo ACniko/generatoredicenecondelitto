@@ -16,6 +16,7 @@ const makeBible = (playerCount) => {
   const names = Array.from({ length: playerCount }, (_, i) => `Personaggio ${i + 1} Rossi`);
   return {
     title: 'Il segreto della villa',
+    victimName: 'Alberto Neri',
     commonDocument: {
       introduction: Array.from({ length: 30 }, (_, i) => `Introduzione della villa e del delitto ${i + 1}.`).join(' '),
       crimeSceneMapDescription: Array.from({ length: 30 }, (_, i) => `Descrizione verificabile della scena e degli ambienti ${i + 1}.`).join(' '),
@@ -70,10 +71,14 @@ const makeCharacter = (name, allNames) => {
   };
 };
 
-async function runGeneration(playerCount, { theme = 'Mistero nella villa', rejectVerification = false, firstCallRateLimited = false, firstCallLongRateLimit = false, firstCallStructuredFailure = false, firstCharacterBatchIncomplete = false, shortCommonDocument = false, invalidTimeline = false } = {}) {
+async function runGeneration(playerCount, { theme = 'Mistero nella villa', rejectVerification = false, firstCallRateLimited = false, retrySeconds = 1, firstCallLongRateLimit = false, firstCallStructuredFailure = false, firstCharacterBatchIncomplete = false, shortCommonDocument = false, repairShortDocument = false, firstRepairInvalid = false, shortClue = false, victimInTimeline = false, shortRelationship = false, invalidTimeline = false } = {}) {
   const bible = makeBible(playerCount);
   if (shortCommonDocument) bible.commonDocument.introduction = 'Introduzione troppo breve.';
   if (invalidTimeline) bible.timeline[2].time = '19:00';
+  if (shortClue) bible.characterPlans[1].cluePlan[0].content = 'Indizio troppo breve.';
+  if (victimInTimeline) bible.timeline[1].characters.push(bible.victimName);
+  if (shortRelationship) bible.characterPlans[0].relationshipFacts[0].fact = 'Un vecchio debito.';
+  let repairCount = 0;
   const allNames = bible.characterPlans.map((plan) => plan.name);
   const calls = [];
   let rateLimitReturned = false;
@@ -94,7 +99,7 @@ async function runGeneration(playerCount, { theme = 'Mistero nella villa', rejec
       rateLimitReturned = true;
       return new Response(JSON.stringify({ error: 'Limite temporaneo. Attendi circa 1 secondo.' }), {
         status: 429,
-        headers: { 'Content-Type': 'application/json', 'Retry-After': '1' }
+        headers: { 'Content-Type': 'application/json', 'Retry-After': String(retrySeconds) }
       });
     }
     if (firstCallStructuredFailure && !structuredFailureReturned) {
@@ -106,7 +111,14 @@ async function runGeneration(playerCount, { theme = 'Mistero nella villa', rejec
     }
     let payload;
     if (schemaName === 'story_bible') payload = bible;
-    else if (schemaName === 'character_batch') {
+    else if (schemaName === 'bible_text_repair') {
+      repairCount += 1;
+      const fields = JSON.parse(request.prompt.split('CAMPI:\n')[1].split('\nCONTESTO CANONICO:')[0]);
+      payload = Object.fromEntries(fields.map(({ key, path }) => {
+        const original = path.replace(/\[(\d+)\]/g, '.$1').split('.').reduce((value, part) => value[part], makeBible(playerCount));
+        return [key, repairShortDocument && !(firstRepairInvalid && repairCount === 1) ? original : 'Ancora breve.'];
+      }));
+    } else if (schemaName === 'character_batch') {
       const line = request.prompt.split('\n')[0];
       const namesText = line.split('senza aggiungerne o ometterne: ')[1].split('.')[0];
       const selectedNames = namesText.split(', ');
@@ -210,4 +222,56 @@ test('a long provider quota window is shown immediately without retrying the exp
     () => runGeneration(4, { firstCallLongRateLimit: true }),
     /Attendi circa 4 minuti e 48 secondi/
   );
+});
+
+ test('five-player Victorian villa repairs a short introduction without regenerating canonical facts', async () => {
+  const { story, calls } = await runGeneration(5, { theme: 'Mistero a Villa Vittoriana', shortCommonDocument: true, repairShortDocument: true });
+  assert.equal(story.characters.length, 5);
+  assert.equal(story.evidence.length, 15);
+  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
+  assert.equal(calls.filter((call) => call.schemaName === 'bible_text_repair').length, 1);
+  assert.equal(story.commonDocument.introduction, makeBible(5).commonDocument.introduction);
+  assert.deepEqual(story.solution, makeBible(5).solution);
+  assert.match(calls.find((call) => call.schemaName === 'bible_text_repair').prompt, /200/);
+});
+
+ test('text repair retries invalid replacements and never alters already valid evidence', async () => {
+  const { story, calls } = await runGeneration(5, { shortCommonDocument: true, repairShortDocument: true, firstRepairInvalid: true });
+  assert.equal(calls.filter((call) => call.schemaName === 'bible_text_repair').length, 2);
+  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
+  assert.equal(story.evidence[0].content, makeBible(5).characterPlans[0].cluePlan[0].content);
+ });
+
+ test('short clue prose is repaired for 4, 8 and 12 guests without replacing clue IDs or recipients', async () => {
+  for (const count of [4, 8, 12]) {
+    const { story, calls } = await runGeneration(count, { shortClue: true, repairShortDocument: true });
+    assert.equal(story.evidence.length, count * 3);
+    assert.equal(story.evidence[3].id, 'clue-1-1');
+    assert.deepEqual(story.evidence[3].recipients, ['Personaggio 2 Rossi']);
+    assert.equal(story.evidence[3].content, makeBible(count).characterPlans[1].cluePlan[0].content);
+    assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
+  }
+ });
+
+test('a 64-second quota cooldown is awaited automatically without restarting generation', async () => {
+  const originalTimeout = globalThis.setTimeout;
+  const waits = [];
+  globalThis.setTimeout = (callback, delay, ...args) => { waits.push(delay); return originalTimeout(callback, 0, ...args); };
+  try {
+    const { story } = await runGeneration(5, { firstCallRateLimited: true, retrySeconds: 64 });
+    assert.equal(story.characters.length, 5);
+    assert.ok(waits.includes(64000));
+  } finally { globalThis.setTimeout = originalTimeout; }
+});
+
+test('canonical timeline may include the non-playing victim without inventing a participant', async () => {
+  const { story } = await runGeneration(5, { victimInTimeline: true });
+  assert.equal(story.characters.length, 5);
+  assert.ok(!story.characters.some((character) => character.name === 'Alberto Neri'));
+});
+test('short canonical relationships are expanded without changing their targets', async () => {
+  const { story, calls } = await runGeneration(5, { shortRelationship: true, repairShortDocument: true });
+  assert.equal(story.characters.length, 5);
+  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
+  assert.ok(calls.some((call) => call.schemaName === 'bible_text_repair'));
 });
