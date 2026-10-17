@@ -16,6 +16,7 @@ const makeBible = (playerCount) => {
   const names = Array.from({ length: playerCount }, (_, i) => `Personaggio ${i + 1} Rossi`);
   return {
     title: 'Il segreto della villa',
+    victimName: 'Alberto Neri',
     commonDocument: {
       introduction: Array.from({ length: 30 }, (_, i) => `Introduzione della villa e del delitto ${i + 1}.`).join(' '),
       crimeSceneMapDescription: Array.from({ length: 30 }, (_, i) => `Descrizione verificabile della scena e degli ambienti ${i + 1}.`).join(' '),
@@ -70,11 +71,13 @@ const makeCharacter = (name, allNames) => {
   };
 };
 
-async function runGeneration(playerCount, { theme = 'Mistero nella villa', rejectVerification = false, firstCallRateLimited = false, retrySeconds = 1, firstCallLongRateLimit = false, firstCallStructuredFailure = false, firstCharacterBatchIncomplete = false, shortCommonDocument = false, repairShortDocument = false, firstRepairInvalid = false, shortClue = false, invalidTimeline = false } = {}) {
+async function runGeneration(playerCount, { theme = 'Mistero nella villa', rejectVerification = false, firstCallRateLimited = false, retrySeconds = 1, firstCallLongRateLimit = false, firstCallStructuredFailure = false, firstCharacterBatchIncomplete = false, shortCommonDocument = false, repairShortDocument = false, firstRepairInvalid = false, shortClue = false, victimInTimeline = false, shortRelationship = false, invalidTimeline = false } = {}) {
   const bible = makeBible(playerCount);
   if (shortCommonDocument) bible.commonDocument.introduction = 'Introduzione troppo breve.';
   if (invalidTimeline) bible.timeline[2].time = '19:00';
   if (shortClue) bible.characterPlans[1].cluePlan[0].content = 'Indizio troppo breve.';
+  if (victimInTimeline) bible.timeline[1].characters.push(bible.victimName);
+  if (shortRelationship) bible.characterPlans[0].relationshipFacts[0].fact = 'Un vecchio debito.';
   let repairCount = 0;
   const allNames = bible.characterPlans.map((plan) => plan.name);
   const calls = [];
@@ -259,4 +262,16 @@ test('a 64-second quota cooldown is awaited automatically without restarting gen
     assert.equal(story.characters.length, 5);
     assert.ok(waits.includes(64000));
   } finally { globalThis.setTimeout = originalTimeout; }
+});
+
+test('canonical timeline may include the non-playing victim without inventing a participant', async () => {
+  const { story } = await runGeneration(5, { victimInTimeline: true });
+  assert.equal(story.characters.length, 5);
+  assert.ok(!story.characters.some((character) => character.name === 'Alberto Neri'));
+});
+test('short canonical relationships are expanded without changing their targets', async () => {
+  const { story, calls } = await runGeneration(5, { shortRelationship: true, repairShortDocument: true });
+  assert.equal(story.characters.length, 5);
+  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
+  assert.ok(calls.some((call) => call.schemaName === 'bible_text_repair'));
 });

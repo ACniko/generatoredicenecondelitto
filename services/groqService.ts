@@ -17,6 +17,7 @@ type CharacterPlan = {
 };
 
 type StoryBible = Pick<StoryData, 'title' | 'commonDocument' | 'solution'> & {
+  victimName: string;
   timeline: Array<{ id: string; time: string; location: string; event: string; characters: string[] }>;
   characterPlans: CharacterPlan[];
 };
@@ -39,6 +40,7 @@ const storyBibleSchema = {
   type: 'object',
   properties: {
     title: { type: 'string' },
+    victimName: { type: 'string' },
     commonDocument: {
       type: 'object',
       properties: {
@@ -98,7 +100,7 @@ const storyBibleSchema = {
       },
     },
   },
-  required: ['title', 'commonDocument', 'solution', 'timeline', 'characterPlans'],
+  required: ['title', 'victimName', 'commonDocument', 'solution', 'timeline', 'characterPlans'],
 };
 
 const characterSchema = {
@@ -221,6 +223,9 @@ function validateBible(bible: StoryBible, playerCount: number): string[] {
     issues.push('I nomi dei personaggi mancano o non sono univoci.');
   }
   const nameSet = new Set(names.map(normalizeName));
+  const victim = typeof bible.victimName === 'string' ? bible.victimName.trim() : '';
+  if (!victim || nameSet.has(normalizeName(victim))) issues.push('La vittima deve avere un nome distinto dai partecipanti e non occupare una scheda giocatore.');
+  const timelineNames = new Set([...nameSet, normalizeName(victim)]);
   const common = bible.commonDocument;
   for (const [field, minimum, label] of [
     ['introduction', STORY_CONTENT_LIMITS.commonIntroduction, 'introduzione'],
@@ -286,7 +291,7 @@ function validateBible(bible: StoryBible, playerCount: number): string[] {
       previousTime = minutes;
       if (!event?.location?.trim() || !event?.event?.trim() || !Array.isArray(event.characters) || !event.characters.length) {
         issues.push(`L’evento ${index + 1} della cronologia deve specificare luogo, fatto e personaggi coinvolti.`);
-      } else if (event.characters.some((name) => !nameSet.has(normalizeName(name)))) {
+      } else if (event.characters.some((name) => !timelineNames.has(normalizeName(name)))) {
         issues.push(`L’evento ${index + 1} cita un personaggio assente dal cast.`);
       }
     });
@@ -410,7 +415,7 @@ function buildBiblePrompt(playerCount: number, theme: string, correction = ''): 
   return `Fase: bibbia narrativa. Il numero di giocatori è: ${playerCount}. Tema: ${JSON.stringify(theme)}.
 Progetta un caso originale, coerente e risolvibile per una cena con delitto italiana da 2–3 ore. Questa è la fonte canonica di ogni fatto: le successive schede dovranno rispettarla.
 
-La storia ha un solo colpevole, un movente credibile, una cronologia verificabile e una catena di deduzioni spiegata in passaggi. La soluzione è dimostrabile usando solo informazioni distribuibili ai partecipanti. Il documento comune non deve rivelare colpevole né contenere spoiler.
+Indica in victimName il nome completo della vittima, un personaggio non giocante distinto dai partecipanti. La cronologia può citare la vittima e i nomi esatti dei partecipanti; le schede e i destinatari degli indizi includono solo i partecipanti. La storia ha un solo colpevole, un movente credibile, una cronologia verificabile e una catena di deduzioni spiegata in passaggi. La soluzione è dimostrabile usando solo informazioni distribuibili ai partecipanti. Il documento comune non deve rivelare colpevole né contenere spoiler.
 
 Restituisci esattamente ${playerCount} piani personaggio con nomi e cognomi distinti. Ogni piano definisce ruolo pubblico, verità personale, segreto, movente o ragione del sospetto, alibi con orari e tre relazioni chiave coerenti; limita relationshipFacts a tre legami significativi per personaggio, non a tutti i possibili abbinamenti. Per ogni personaggio crea ESATTAMENTE tre indizi (uno per ciascun round), identificati univocamente. Ogni indizio è consegnato privatamente a quel personaggio; non inserire nella sua scheda informazioni che non potrebbe conoscere. Nel canovaccio descrivi ciascun indizio in 40–55 parole; il collegamento alla soluzione deve avere 15–45 parole e spiegare quale fatto verifica; la nota spoiler dell’organizzatore deve avere 10–45 parole. Distribuisci almeno tre indizi decisivi, uno per round e a destinatari innocenti differenti; includi indizi corroboranti e depistaggi con una spiegazione vera e non contraddittoria. Nessun depistaggio deve rendere falsa la soluzione.
 
@@ -447,6 +452,9 @@ async function repairBibleText(bible: StoryBible): Promise<void> {
   }
   if (Array.isArray(bible.characterPlans)) {
     bible.characterPlans.forEach((plan, index) => {
+      if (Array.isArray(plan?.relationshipFacts)) {
+        plan.relationshipFacts.forEach((relation, relationIndex) => add(relation, 'fact', `characterPlans[${index}].relationshipFacts[${relationIndex}].fact`, 12, 120));
+      }
       if (!Array.isArray(plan?.cluePlan)) return;
       plan.cluePlan.forEach((clue, clueIndex) => {
         const path = `characterPlans[${index}].cluePlan[${clueIndex}]`;
@@ -467,6 +475,14 @@ async function repairBibleText(bible: StoryBible): Promise<void> {
       }));
     }
   }
+  const canonicalContext = {
+    title: bible.title, victimName: bible.victimName, timeline: bible.timeline, solution: bible.solution,
+    cast: bible.characterPlans?.map((plan) => ({
+      name: plan.name, publicRole: plan.publicRole, truth: plan.truth, privateSecret: plan.privateSecret,
+      motive: plan.motive, alibiTimeline: plan.alibiTimeline, relationshipFacts: plan.relationshipFacts,
+      clues: plan.cluePlan?.map((clue) => ({ id: clue.id, round: clue.round, title: clue.title, type: clue.type, solutionLink: clue.solutionLink })),
+    })),
+  };
   const invalid = () => targets.filter((target) => countWords(target.read()) < target.minimum || countWords(target.read()) > target.maximum);
   for (let attempt = 0; attempt < 3 && invalid().length; attempt += 1) {
     const pending = invalid();
@@ -478,7 +494,7 @@ async function repairBibleText(bible: StoryBible): Promise<void> {
         targetWords: Math.round((target.minimum + target.maximum) / 2), text: target.read(),
       }));
       const result = await requestJson<Record<string, string>>(
-        `Correzione mirata dei testi del canovaccio. Riscrivi SOLO i campi richiesti, mirando al numero targetWords, ben lontano dai limiti. Conta le parole prima di rispondere. Il conteggio considera parole e numeri, con gli apostrofi interni parte della parola. Amplia con dettagli utili coerenti; niente ripetizioni o riempitivi. Conserva nomi, fatti, orari, colpevole, relazioni e valore probatorio. I campi pubblici non devono contenere spoiler. Non aggiungere nuove prove, fatti investigativi o rivelazioni. Restituisci ogni testo nella chiave assegnata.\nCAMPI:\n${JSON.stringify(fields)}\nCONTESTO CANONICO:\n${JSON.stringify(bible)}`,
+        `Correzione mirata dei testi del canovaccio. Riscrivi SOLO i campi richiesti, mirando al numero targetWords, ben lontano dai limiti. Conta le parole prima di rispondere. Il conteggio considera parole e numeri, con gli apostrofi interni parte della parola. Amplia con dettagli utili coerenti; niente ripetizioni o riempitivi. Conserva nomi, fatti, orari, colpevole, relazioni e valore probatorio. I campi pubblici non devono contenere spoiler. Non aggiungere nuove prove, fatti investigativi o rivelazioni. Restituisci ogni testo nella chiave assegnata.\nCAMPI:\n${JSON.stringify(fields)}\nCONTESTO CANONICO:\n${JSON.stringify(canonicalContext)}`,
         'bible_text_repair', { type: 'object', properties, required: Object.keys(properties) }, 0.25,
       );
       batch.forEach((target, i) => {
