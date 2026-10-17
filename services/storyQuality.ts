@@ -7,6 +7,41 @@ export interface StoryQualityAudit {
 }
 
 const CLUE_TYPES = ['decisive', 'corroborating', 'red-herring'] as const;
+export const STORY_CONTENT_LIMITS = {
+  commonIntroduction: 200,
+  commonIntroductionMax: 350,
+  crimeScene: 200,
+  crimeSceneMax: 350,
+  characterOverviewPerPlayer: 45,
+  characterOverviewMaxPerPlayer: 70,
+  initialDescription: 100,
+  initialDescriptionMax: 140,
+  relationships: 180,
+  relationshipsMax: 260,
+  roundInfo: 150,
+  roundInfoMax: 190,
+  secretsAndMotives: 180,
+  secretsAndMotivesMax: 260,
+  opinionMin: 45,
+  opinionMax: 65,
+  motive: 120,
+  motiveMax: 200,
+  method: 120,
+  methodMax: 200,
+  backstory: 200,
+  backstoryMax: 300,
+  deductionSteps: 4,
+  deductionStepsMax: 6,
+  deductionStep: 25,
+  deductionStepMax: 80,
+  clue: 40,
+  clueMax: 55,
+  clueSolutionLink: 15,
+  clueSolutionLinkMax: 45,
+  clueOrganizerNote: 10,
+  clueOrganizerNoteMax: 45,
+} as const;
+const ROUND_LABELS = ['Fatti che conosci:', 'Cosa puoi rivelare:', 'Obiettivo concreto:', 'Informazione nuova:'] as const;
 const REQUIRED_CHARACTER_TEXT_FIELDS = [
   'initialDescription',
   'relationships',
@@ -40,6 +75,18 @@ function addRequiredTextError(
   if (!nonEmptyString(value)) errors.push(`Il campo «${label}» è vuoto o mancante.`);
 }
 
+function addMinimumWordsError(errors: string[], value: unknown, label: string, minimum: number): void {
+  if (nonEmptyString(value) && wordCount(value) < minimum) {
+    errors.push(`Il campo «${label}» è troppo breve: servono almeno ${minimum} parole.`);
+  }
+}
+
+function addMaximumWordsError(errors: string[], value: unknown, label: string, maximum: number): void {
+  if (nonEmptyString(value) && wordCount(value) > maximum) {
+    errors.push(`Il campo «${label}» è troppo lungo: massimo ${maximum} parole.`);
+  }
+}
+
 function asClue(value: unknown): value is EvidenceClue {
   return isRecord(value);
 }
@@ -56,8 +103,8 @@ export function auditStoryQuality(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (!Number.isInteger(expectedPlayerCount) || expectedPlayerCount < 1) {
-    errors.push('Il numero richiesto di partecipanti deve essere un intero positivo.');
+  if (!Number.isInteger(expectedPlayerCount) || expectedPlayerCount < 4 || expectedPlayerCount > 12) {
+    errors.push('Il numero richiesto di partecipanti deve essere un intero tra 4 e 12.');
   }
   if (!isRecord(input)) {
     return { valid: false, errors: ['La storia generata non è un oggetto valido.'], warnings };
@@ -72,6 +119,12 @@ export function auditStoryQuality(
     addRequiredTextError(errors, commonDocument.introduction, 'introduzione');
     addRequiredTextError(errors, commonDocument.crimeSceneMapDescription, 'descrizione della scena del crimine');
     addRequiredTextError(errors, commonDocument.characterOverviews, 'riepilogo dei personaggi');
+    addMinimumWordsError(errors, commonDocument.introduction, 'introduzione', STORY_CONTENT_LIMITS.commonIntroduction);
+    addMinimumWordsError(errors, commonDocument.crimeSceneMapDescription, 'descrizione della scena del crimine', STORY_CONTENT_LIMITS.crimeScene);
+    addMinimumWordsError(errors, commonDocument.characterOverviews, 'riepilogo dei personaggi', expectedPlayerCount * STORY_CONTENT_LIMITS.characterOverviewPerPlayer);
+    addMaximumWordsError(errors, commonDocument.introduction, 'introduzione', STORY_CONTENT_LIMITS.commonIntroductionMax);
+    addMaximumWordsError(errors, commonDocument.crimeSceneMapDescription, 'descrizione della scena del crimine', STORY_CONTENT_LIMITS.crimeSceneMax);
+    addMaximumWordsError(errors, commonDocument.characterOverviews, 'riepilogo dei personaggi', expectedPlayerCount * STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer);
   }
 
   const characters = Array.isArray(input.characters) ? input.characters : [];
@@ -105,18 +158,42 @@ export function auditStoryQuality(
     for (const field of REQUIRED_CHARACTER_TEXT_FIELDS) {
       addRequiredTextError(errors, character[field], `personaggio ${position}: ${field}`);
     }
+    const maximumFieldWords: Record<(typeof REQUIRED_CHARACTER_TEXT_FIELDS)[number], number> = {
+      initialDescription: STORY_CONTENT_LIMITS.initialDescriptionMax,
+      relationships: STORY_CONTENT_LIMITS.relationshipsMax,
+      round1Info: STORY_CONTENT_LIMITS.roundInfoMax,
+      round2Info: STORY_CONTENT_LIMITS.roundInfoMax,
+      round3Info: STORY_CONTENT_LIMITS.roundInfoMax,
+      secretsAndMotives: STORY_CONTENT_LIMITS.secretsAndMotivesMax,
+    };
+    for (const field of REQUIRED_CHARACTER_TEXT_FIELDS) addMaximumWordsError(errors, character[field], `personaggio ${position}: ${field}`, maximumFieldWords[field]);
 
     const minimumFieldWords: Record<(typeof REQUIRED_CHARACTER_TEXT_FIELDS)[number], number> = {
-      initialDescription: 80,
-      relationships: 120,
-      round1Info: 100,
-      round2Info: 100,
-      round3Info: 100,
-      secretsAndMotives: 120,
+      initialDescription: STORY_CONTENT_LIMITS.initialDescription,
+      relationships: STORY_CONTENT_LIMITS.relationships,
+      round1Info: STORY_CONTENT_LIMITS.roundInfo,
+      round2Info: STORY_CONTENT_LIMITS.roundInfo,
+      round3Info: STORY_CONTENT_LIMITS.roundInfo,
+      secretsAndMotives: STORY_CONTENT_LIMITS.secretsAndMotives,
     };
     for (const field of REQUIRED_CHARACTER_TEXT_FIELDS) {
       if (nonEmptyString(character[field]) && wordCount(character[field]) < minimumFieldWords[field]) {
         errors.push(`La scheda ${position} è troppo breve in ${field}: servono almeno ${minimumFieldWords[field]} parole.`);
+      }
+    }
+
+    for (const field of ['round1Info', 'round2Info', 'round3Info'] as const) {
+      const roundText = character[field];
+      if (!nonEmptyString(roundText)) continue;
+      for (const label of ROUND_LABELS) {
+        if (!roundText.includes(label)) errors.push(`La scheda ${position} in ${field} deve includere la sezione «${label}».`);
+      }
+      const objective = roundText.match(/Obiettivo concreto:\s*([\s\S]*?)(?=Informazione nuova:|$)/u)?.[1] ?? '';
+      const otherNames = characters.filter(isRecord)
+        .map((other) => other.name)
+        .filter((name): name is string => nonEmptyString(name) && normalizedName(name) !== normalizedName(String(character.name ?? '')));
+      if (!otherNames.some((name) => objective.toLocaleLowerCase('it').includes(name.trim().toLocaleLowerCase('it')))) {
+        errors.push(`La scheda ${position} in ${field}: «Obiettivo concreto:» deve nominare un altro personaggio.`);
       }
     }
 
@@ -133,8 +210,11 @@ export function auditStoryQuality(
         }
         addRequiredTextError(errors, opinion.characterName, `personaggio ${position}: nome nell’opinione ${opinionIndex + 1}`);
         addRequiredTextError(errors, opinion.opinion, `personaggio ${position}: testo dell’opinione ${opinionIndex + 1}`);
-        if (nonEmptyString(opinion.opinion) && wordCount(opinion.opinion) < 30) {
-          errors.push(`L’opinione ${opinionIndex + 1} del personaggio ${position} è troppo breve: servono almeno 30 parole.`);
+        if (nonEmptyString(opinion.opinion) && wordCount(opinion.opinion) < STORY_CONTENT_LIMITS.opinionMin) {
+          errors.push(`L’opinione ${opinionIndex + 1} del personaggio ${position} è troppo breve: servono almeno ${STORY_CONTENT_LIMITS.opinionMin} parole.`);
+        }
+        if (nonEmptyString(opinion.opinion) && wordCount(opinion.opinion) > STORY_CONTENT_LIMITS.opinionMax) {
+          errors.push(`L’opinione ${opinionIndex + 1} del personaggio ${position} è troppo lunga: massimo ${STORY_CONTENT_LIMITS.opinionMax} parole.`);
         }
         if (nonEmptyString(opinion.characterName) && knownNameSet.has(normalizedName(opinion.characterName))) {
           actualOpinionNames.add(normalizedName(opinion.characterName));
@@ -147,6 +227,15 @@ export function auditStoryQuality(
     }
   });
 
+  if (isRecord(commonDocument) && nonEmptyString(commonDocument.characterOverviews)) {
+    const overview = commonDocument.characterOverviews.toLocaleLowerCase('it');
+    for (const character of validCharacters) {
+      if (nonEmptyString(character.name) && !overview.includes(character.name.trim().toLocaleLowerCase('it'))) {
+        errors.push(`Il riepilogo dei personaggi deve citare «${character.name.trim()}».`);
+      }
+    }
+  }
+
   const solution = input.solution;
   if (!isRecord(solution)) {
     errors.push('La soluzione è assente o non valida.');
@@ -154,6 +243,12 @@ export function auditStoryQuality(
     for (const field of ['motive', 'how', 'backstory'] as const) {
       addRequiredTextError(errors, solution[field], `soluzione: ${field}`);
     }
+    addMinimumWordsError(errors, solution.motive, 'soluzione: motive', STORY_CONTENT_LIMITS.motive);
+    addMinimumWordsError(errors, solution.how, 'soluzione: how', STORY_CONTENT_LIMITS.method);
+    addMinimumWordsError(errors, solution.backstory, 'soluzione: backstory', STORY_CONTENT_LIMITS.backstory);
+    addMaximumWordsError(errors, solution.motive, 'soluzione: motive', STORY_CONTENT_LIMITS.motiveMax);
+    addMaximumWordsError(errors, solution.how, 'soluzione: how', STORY_CONTENT_LIMITS.methodMax);
+    addMaximumWordsError(errors, solution.backstory, 'soluzione: backstory', STORY_CONTENT_LIMITS.backstoryMax);
 
     const culprits = solution.culprits;
     if (!Array.isArray(culprits) || culprits.length === 0 || culprits.some((name) => !nonEmptyString(name))) {
@@ -175,8 +270,18 @@ export function auditStoryQuality(
 
     if (!Array.isArray(solution.deductionChain) || solution.deductionChain.length === 0) {
       errors.push('La catena di deduzione della soluzione deve contenere almeno un passaggio.');
-    } else if (solution.deductionChain.some((step) => !nonEmptyString(step))) {
-      errors.push('Ogni passaggio della catena di deduzione deve contenere testo non vuoto.');
+    } else {
+      if (solution.deductionChain.length < STORY_CONTENT_LIMITS.deductionSteps) {
+        errors.push(`La catena di deduzione richiede almeno ${STORY_CONTENT_LIMITS.deductionSteps} passaggi.`);
+      }
+      if (solution.deductionChain.length > STORY_CONTENT_LIMITS.deductionStepsMax) {
+        errors.push(`La catena di deduzione deve contenere al massimo ${STORY_CONTENT_LIMITS.deductionStepsMax} passaggi.`);
+      }
+      solution.deductionChain.forEach((step, index) => {
+        if (!nonEmptyString(step)) errors.push('Ogni passaggio della catena di deduzione deve contenere testo non vuoto.');
+        else addMinimumWordsError(errors, step, `deduzione, passaggio ${index + 1}`, STORY_CONTENT_LIMITS.deductionStep);
+        addMaximumWordsError(errors, step, `deduzione, passaggio ${index + 1}`, STORY_CONTENT_LIMITS.deductionStepMax);
+      });
     }
   }
 
@@ -191,6 +296,8 @@ export function auditStoryQuality(
   const recipientNames = new Set<string>();
   const clueTypes = new Set<string>();
   const decisiveRounds = new Set<number>();
+  const innocentDecisiveRecipients = new Set<string>();
+  const clueSlots = new Map<string, number>();
   let decisiveCount = 0;
   let corroboratingCount = 0;
 
@@ -204,6 +311,12 @@ export function auditStoryQuality(
     for (const field of ['id', 'title', 'content', 'solutionLink', 'organizerNote'] as const) {
       addRequiredTextError(errors, clue[field], `indizio ${position}: ${field}`);
     }
+    addMinimumWordsError(errors, clue.content, `indizio ${position}: content`, STORY_CONTENT_LIMITS.clue);
+    addMaximumWordsError(errors, clue.content, `indizio ${position}: content`, STORY_CONTENT_LIMITS.clueMax);
+    addMinimumWordsError(errors, clue.solutionLink, `indizio ${position}: solutionLink`, STORY_CONTENT_LIMITS.clueSolutionLink);
+    addMaximumWordsError(errors, clue.solutionLink, `indizio ${position}: solutionLink`, STORY_CONTENT_LIMITS.clueSolutionLinkMax);
+    addMinimumWordsError(errors, clue.organizerNote, `indizio ${position}: organizerNote`, STORY_CONTENT_LIMITS.clueOrganizerNote);
+    addMaximumWordsError(errors, clue.organizerNote, `indizio ${position}: organizerNote`, STORY_CONTENT_LIMITS.clueOrganizerNoteMax);
 
     if (nonEmptyString(clue.id)) {
       if (clueIds.has(clue.id.trim())) errors.push(`L’identificativo «${clue.id.trim()}» è assegnato a più indizi.`);
@@ -216,8 +329,8 @@ export function auditStoryQuality(
     }
 
     const recipients = clue.recipients;
-    if (!Array.isArray(recipients) || recipients.length === 0) {
-      errors.push(`L’indizio ${position} deve avere almeno un destinatario.`);
+    if (!Array.isArray(recipients) || recipients.length !== 1) {
+      errors.push(`L’indizio ${position} deve avere esattamente un destinatario.`);
     } else {
       const clueRecipientNames = new Set<string>();
       recipients.forEach((recipient) => {
@@ -230,6 +343,11 @@ export function auditStoryQuality(
         if (clueRecipientNames.has(key)) errors.push(`L’indizio ${position} assegna due volte lo stesso destinatario.`);
         clueRecipientNames.add(key);
         recipientNames.add(key);
+        if (knownNames.has(key) && (round === 1 || round === 2 || round === 3)) {
+          const slot = `${key}:${round}`;
+          clueSlots.set(slot, (clueSlots.get(slot) ?? 0) + 1);
+          if (clue.type === 'decisive' && names.get(key)?.isCulprit === false) innocentDecisiveRecipients.add(key);
+        }
       });
     }
 
@@ -242,8 +360,8 @@ export function auditStoryQuality(
         if (round === 1 || round === 2 || round === 3) decisiveRounds.add(round);
         if (nonEmptyString(clue.solutionLink)) {
           const link = clue.solutionLink.trim();
-          const words = link.split(/\s+/u).filter(Boolean);
-          if (link.length < 25 || words.length < 4) {
+          const words = wordCount(link);
+          if (words < 15 || !/(?:dimostr|colleg|deduc|esclud|conferm|identific|prov|rivel|mostr)/iu.test(link)) {
             errors.push(`Il collegamento alla soluzione dell’indizio decisivo ${position} è troppo generico: spiega quale deduzione consente.`);
           }
         }
@@ -257,10 +375,15 @@ export function auditStoryQuality(
   if (!clueTypes.has('corroborating')) errors.push('Manca almeno un indizio corroborante.');
   if (!clueTypes.has('red-herring')) errors.push('Manca almeno un indizio di depistaggio.');
   if (decisiveCount < 3) errors.push(`Servono almeno 3 indizi decisivi; ne sono presenti ${decisiveCount}.`);
+  if (innocentDecisiveRecipients.size < 3) errors.push('Servono indizi decisivi assegnati ad almeno 3 innocenti distinti.');
   if (corroboratingCount < 1) errors.push('Serve almeno un indizio corroborante.');
   if (decisiveRounds.size < 3) errors.push('Distribuisci almeno un indizio decisivo in ogni round.');
 
   for (const key of knownNames) {
+    for (const round of [1, 2, 3]) {
+      const count = clueSlots.get(`${key}:${round}`) ?? 0;
+      if (count !== 1) errors.push(`Il personaggio «${String(names.get(key)?.name ?? key)}» deve ricevere esattamente un indizio nel round ${round}; ne riceve ${count}.`);
+    }
     if (!recipientNames.has(key)) {
       const characterName = names.get(key)?.name;
       errors.push(`Il personaggio «${String(characterName ?? key)}» non riceve alcun indizio.`);

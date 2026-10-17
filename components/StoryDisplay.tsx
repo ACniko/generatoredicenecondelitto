@@ -64,12 +64,12 @@ const generatePdf = async (element: HTMLElement, filename: string) => {
 
     for (let index = 0; index < renderPages.length; index += 1) {
       const page = renderPages[index];
+      if (page.scrollHeight > A4_CSS_HEIGHT + 1) {
+        throw new Error(`La pagina ${index + 1} supera il formato A4.`);
+      }
       const canvas = await html2canvas(page, PDF_OPTIONS);
       if (index > 0) pdf.addPage('a4', 'portrait');
-      const imageRatio = canvas.width / canvas.height;
-      const imageWidth = Math.min(210, 297 * imageRatio);
-      const imageHeight = imageWidth / imageRatio;
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (210 - imageWidth) / 2, 0, imageWidth, imageHeight, undefined, 'FAST');
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
       // Keep the folio outside the page image; page content is laid out with a bottom margin.
       pdf.setFontSize(8);
       pdf.setTextColor(100);
@@ -87,7 +87,7 @@ const generatePdf = async (element: HTMLElement, filename: string) => {
 const pdfPageStyle: React.CSSProperties = {
   boxSizing: 'border-box',
   width: `${A4_CSS_WIDTH}px`,
-  minHeight: `${A4_CSS_HEIGHT}px`,
+  height: `${A4_CSS_HEIGHT}px`,
   padding: '58px 64px 78px',
   background: '#fff',
   color: '#111827',
@@ -96,8 +96,8 @@ const pdfPageStyle: React.CSSProperties = {
   lineHeight: 1.55,
 };
 
-const Page: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <section className="pdf-page" style={pdfPageStyle}>{children}</section>
+const Page: React.FC<{ children: React.ReactNode; compact?: boolean }> = ({ children, compact = false }) => (
+  <section className="pdf-page" style={compact ? { ...pdfPageStyle, padding: '48px 54px 70px', fontSize: '14px', lineHeight: 1.4 } : pdfPageStyle}>{children}</section>
 );
 
 const PageTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -111,6 +111,16 @@ const SectionTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => 
 const Text: React.FC<{ children?: React.ReactNode }> = ({ children }) => (
   <p style={{ whiteSpace: 'pre-wrap', margin: '0 0 14px' }}>{children || 'Informazione non disponibile'}</p>
 );
+
+const groupsOf = <T,>(items: T[], size: number): T[][] => {
+  if (items.length === 0) return [[]];
+  const groups: T[][] = [];
+  for (let index = 0; index < items.length; index += size) groups.push(items.slice(index, index + size));
+  return groups;
+};
+
+const overviewParagraphs = (overview: string): string[] =>
+  overview.split(/\r?\n\s*\r?\n|\r?\n/).map((paragraph) => paragraph.trim()).filter(Boolean);
 
 const getEvidence = (story: StoryData): EvidenceClue[] =>
   ((story as StoryWithOptionalEvidence).evidence || []).filter((clue) => clue && Array.isArray(clue.recipients));
@@ -228,22 +238,26 @@ const StoryDisplay: React.FC<StoryDisplayProps> = ({ story, onReset }) => {
   );
 };
 
-const CommonPdfContent: React.FC<{ story: StoryData }> = ({ story }) => (
-  <>
+const CommonPdfContent: React.FC<{ story: StoryData }> = ({ story }) => {
+  const overviewGroups = groupsOf(overviewParagraphs(story.commonDocument.characterOverviews), 4);
+  return <>
     <Page>
       <PageTitle>{story.title}</PageTitle>
       <SectionTitle>Introduzione al mistero</SectionTitle>
       <Text>{story.commonDocument.introduction}</Text>
+    </Page>
+    <Page>
+      <PageTitle>{story.title}</PageTitle>
       <SectionTitle>La scena del crimine</SectionTitle>
       <Text>{story.commonDocument.crimeSceneMapDescription}</Text>
     </Page>
-    <Page>
-      <PageTitle>Personaggi e relazioni note</PageTitle>
-      <Text>{story.commonDocument.characterOverviews}</Text>
-      <p style={{ marginTop: 36, color: '#4b5563', fontStyle: 'italic' }}>Questo documento contiene solo informazioni pubbliche. Le schede individuali e gli indizi riservati vanno consegnati separatamente.</p>
-    </Page>
-  </>
-);
+    {overviewGroups.map((group, index) => <Page key={index}>
+      <PageTitle>Personaggi e relazioni note{overviewGroups.length > 1 ? ` — ${index + 1}` : ''}</PageTitle>
+      {group.map((paragraph, paragraphIndex) => <Text key={paragraphIndex}>{paragraph}</Text>)}
+      {index === overviewGroups.length - 1 && <p style={{ marginTop: 36, color: '#4b5563', fontStyle: 'italic' }}>Questo documento contiene solo informazioni pubbliche. Le schede individuali e gli indizi riservati vanno consegnati separatamente.</p>}
+    </Page>)}
+  </>;
+};
 
 const RulesPdfContent: React.FC = () => (
   <>
@@ -295,6 +309,7 @@ const RulesPdfContent: React.FC = () => (
 const SolutionPdfContent: React.FC<{ story: StoryData }> = ({ story }) => {
   const extendedStory = story as StoryWithOptionalEvidence;
   const evidence = getEvidence(story);
+  const clueGroups = groupsOf(evidence, 2);
   const deductionChain = extendedStory.solution.deductionChain || [];
   return (
     <>
@@ -312,14 +327,15 @@ const SolutionPdfContent: React.FC<{ story: StoryData }> = ({ story }) => {
         <PageTitle>Ricostruzione del caso</PageTitle>
         <SectionTitle>Retroscena completo</SectionTitle>
         <Text>{story.solution.backstory}</Text>
-        {deductionChain.length > 0 && <>
-          <SectionTitle>Catena di deduzioni</SectionTitle>
-          <ol style={{ paddingLeft: 24 }}>{deductionChain.map((step, index) => <li key={`${index}-${step}`} style={{ marginBottom: 10 }}>{step}</li>)}</ol>
-        </>}
       </Page>
-      <Page>
-        <PageTitle>Mappa degli indizi (SPOILER)</PageTitle>
-        {evidence.length === 0 ? <Text>Questa storia non include ancora indizi strutturati.</Text> : evidence.map((clue) => (
+      {deductionChain.length > 0 && <Page>
+        <PageTitle>Catena di deduzioni (SPOILER)</PageTitle>
+        <div style={{ border: '2px solid #b91c1c', padding: 14, marginBottom: 18, color: '#991b1b' }}><strong>Riservato all’organizzatore.</strong> Segui questi passaggi per spiegare la soluzione dopo le accuse.</div>
+        <ol style={{ paddingLeft: 24 }}>{deductionChain.map((step, index) => <li key={`${index}-${step}`} style={{ marginBottom: 10 }}>{step}</li>)}</ol>
+      </Page>}
+      {clueGroups.map((clues, pageIndex) => <Page key={pageIndex} compact>
+        <PageTitle>Mappa degli indizi (SPOILER){clueGroups.length > 1 ? ` — ${pageIndex + 1}` : ''}</PageTitle>
+        {evidence.length === 0 ? <Text>Questa storia non include ancora indizi strutturati.</Text> : clues.map((clue) => (
           <div key={clue.id || clue.title} style={{ border: '1px solid #9ca3af', padding: 12, marginBottom: 12, breakInside: 'avoid' }}>
             <h2 style={{ fontSize: 17, margin: '0 0 6px' }}>{clue.title || clue.id} · {roundLabel(clue.round)} · {clueTypeLabel(clue.type)}</h2>
             <p style={{ margin: '0 0 6px' }}><strong>Destinatari:</strong> {clue.recipients.join(', ')}</p>
@@ -328,7 +344,7 @@ const SolutionPdfContent: React.FC<{ story: StoryData }> = ({ story }) => {
             <p style={{ margin: 0 }}><strong>Nota organizzatore:</strong> {clue.organizerNote}</p>
           </div>
         ))}
-      </Page>
+      </Page>)}
     </>
   );
 };
@@ -340,7 +356,7 @@ const CharacterPdfContent: React.FC<{ character: Character; story: StoryData }> 
   const opinionSplit = Math.ceil(opinions.length / 2);
   return (
     <>
-      <Page>
+      <Page compact>
         <PageTitle>{character.name}</PageTitle>
         <p style={{ textAlign: 'center', color: '#4b5563', fontStyle: 'italic', marginTop: -15, marginBottom: 24 }}>Scheda riservata — non mostrare agli altri senza il tuo consenso.</p>
         <SectionTitle>Descrizione pubblica</SectionTitle>
@@ -348,7 +364,7 @@ const CharacterPdfContent: React.FC<{ character: Character; story: StoryData }> 
         <SectionTitle>Il tuo punto di vista</SectionTitle>
         <Text>{character.relationships}</Text>
       </Page>
-      <Page>
+      <Page compact>
         <PageTitle>Relazioni e opinioni</PageTitle>
         <SectionTitle>Le tue opinioni sugli altri</SectionTitle>
         {opinions.length ? opinions.slice(0, opinionSplit).map((op, index) => (
@@ -357,10 +373,10 @@ const CharacterPdfContent: React.FC<{ character: Character; story: StoryData }> 
           </div>
         )) : <Text>Non hai ancora un’opinione particolare sugli altri personaggi.</Text>}
       </Page>
-      <Page>
+      <Page compact>
         <PageTitle>Motivazioni personali</PageTitle>
         {opinions.slice(opinionSplit).map((op, index) => (
-          <div key={`${op.characterName}-${index + opinionSplit}`} style={{ marginBottom: 16, breakInside: 'avoid' }}>
+          <div key={`${op.characterName}-${index + opinionSplit}`} style={{ marginBottom: 8, breakInside: 'avoid' }}>
             <strong>{op.characterName}</strong><Text>{op.opinion}</Text>
           </div>
         ))}
@@ -368,7 +384,7 @@ const CharacterPdfContent: React.FC<{ character: Character; story: StoryData }> 
         <Text>{character.secretsAndMotives}</Text>
       </Page>
       {[1, 2, 3].map((round, index) => (
-        <Page key={round}>
+        <Page key={round} compact>
           <PageTitle>Informazioni riservate — Round {round}</PageTitle>
           <p style={{ color: '#4b5563', fontStyle: 'italic' }}>Leggi questa sezione soltanto quando l’organizzatore annuncia il round.</p>
           <Text>{[character.round1Info, character.round2Info, character.round3Info][index]}</Text>

@@ -1,5 +1,5 @@
 import type { EvidenceClue, StoryData } from '../types';
-import { auditStoryQuality } from './storyQuality';
+import { auditStoryQuality, STORY_CONTENT_LIMITS } from './storyQuality';
 
 const STORY_MODEL = 'openai/gpt-oss-120b';
 const CHARACTER_BATCH_SIZE = 2;
@@ -17,6 +17,7 @@ type CharacterPlan = {
 };
 
 type StoryBible = Pick<StoryData, 'title' | 'commonDocument' | 'solution'> & {
+  timeline: Array<{ id: string; time: string; location: string; event: string; characters: string[] }>;
   characterPlans: CharacterPlan[];
 };
 
@@ -58,6 +59,20 @@ const storyBibleSchema = {
       },
       required: ['culprits', 'motive', 'how', 'backstory', 'deductionChain'],
     },
+    timeline: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          time: { type: 'string' },
+          location: { type: 'string' },
+          event: { type: 'string' },
+          characters: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['id', 'time', 'location', 'event', 'characters'],
+      },
+    },
     characterPlans: {
       type: 'array',
       items: {
@@ -83,7 +98,7 @@ const storyBibleSchema = {
       },
     },
   },
-  required: ['title', 'commonDocument', 'solution', 'characterPlans'],
+  required: ['title', 'commonDocument', 'solution', 'timeline', 'characterPlans'],
 };
 
 const characterSchema = {
@@ -206,15 +221,93 @@ function validateBible(bible: StoryBible, playerCount: number): string[] {
     issues.push('I nomi dei personaggi mancano o non sono univoci.');
   }
   const nameSet = new Set(names.map(normalizeName));
-  const culpritNames = bible.solution.culprits ?? [];
-  if (!culpritNames.length || culpritNames.some((name) => !nameSet.has(normalizeName(name)))) {
-    issues.push('La soluzione deve indicare almeno un colpevole presente nel cast.');
+  const common = bible.commonDocument;
+  for (const [field, minimum, label] of [
+    ['introduction', STORY_CONTENT_LIMITS.commonIntroduction, 'introduzione'],
+    ['crimeSceneMapDescription', STORY_CONTENT_LIMITS.crimeScene, 'descrizione della scena'],
+  ] as const) {
+    if (countWords(common[field]) < minimum) issues.push(`Il campo ${label} deve contenere almeno ${minimum} parole.`);
   }
+  for (const [field, maximum, label] of [
+    ['introduction', STORY_CONTENT_LIMITS.commonIntroductionMax, 'introduzione'],
+    ['crimeSceneMapDescription', STORY_CONTENT_LIMITS.crimeSceneMax, 'descrizione della scena'],
+  ] as const) {
+    if (countWords(common[field]) > maximum) issues.push(`Il campo ${label} deve contenere al massimo ${maximum} parole.`);
+  }
+  if (countWords(common.characterOverviews) < playerCount * STORY_CONTENT_LIMITS.characterOverviewPerPlayer) {
+    issues.push(`Il riepilogo dei personaggi deve contenere almeno ${playerCount * STORY_CONTENT_LIMITS.characterOverviewPerPlayer} parole, con un profilo per ogni partecipante.`);
+  }
+  if (countWords(common.characterOverviews) > playerCount * STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer) {
+    issues.push(`Il riepilogo dei personaggi deve contenere al massimo ${playerCount * STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer} parole.`);
+  }
+  const overviewEntries = typeof common.characterOverviews === 'string'
+    ? common.characterOverviews.split(/\r?\n\s*\r?\n/u).map((entry) => entry.trim()).filter(Boolean)
+    : [];
+  if (overviewEntries.length !== playerCount) issues.push(`Il riepilogo del cast deve contenere un paragrafo distinto per ciascuno dei ${playerCount} personaggi.`);
+  for (const entry of overviewEntries) {
+    const entryWords = countWords(entry);
+    if (entryWords < STORY_CONTENT_LIMITS.characterOverviewPerPlayer || entryWords > STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer) {
+      issues.push(`Ogni profilo pubblico deve contenere ${STORY_CONTENT_LIMITS.characterOverviewPerPlayer}–${STORY_CONTENT_LIMITS.characterOverviewMaxPerPlayer} parole.`);
+    }
+  }
+  for (const name of names) {
+    if (name && !common.characterOverviews?.toLocaleLowerCase('it').includes(name.toLocaleLowerCase('it'))) {
+      issues.push(`Il riepilogo dei personaggi deve citare «${name}».`);
+    }
+  }
+  if (countWords(bible.solution.motive) < STORY_CONTENT_LIMITS.motive) issues.push(`Il movente della soluzione deve contenere almeno ${STORY_CONTENT_LIMITS.motive} parole.`);
+  if (countWords(bible.solution.how) < STORY_CONTENT_LIMITS.method) issues.push(`La ricostruzione del delitto deve contenere almeno ${STORY_CONTENT_LIMITS.method} parole.`);
+  if (countWords(bible.solution.backstory) < STORY_CONTENT_LIMITS.backstory) issues.push(`Il retroscena della soluzione deve contenere almeno ${STORY_CONTENT_LIMITS.backstory} parole.`);
+  if (countWords(bible.solution.motive) > STORY_CONTENT_LIMITS.motiveMax) issues.push(`Il movente della soluzione deve contenere al massimo ${STORY_CONTENT_LIMITS.motiveMax} parole.`);
+  if (countWords(bible.solution.how) > STORY_CONTENT_LIMITS.methodMax) issues.push(`La ricostruzione del delitto deve contenere al massimo ${STORY_CONTENT_LIMITS.methodMax} parole.`);
+  if (countWords(bible.solution.backstory) > STORY_CONTENT_LIMITS.backstoryMax) issues.push(`Il retroscena della soluzione deve contenere al massimo ${STORY_CONTENT_LIMITS.backstoryMax} parole.`);
+  if (!Array.isArray(bible.solution.deductionChain) || bible.solution.deductionChain.length < STORY_CONTENT_LIMITS.deductionSteps) {
+    issues.push(`La deduzione deve contenere almeno ${STORY_CONTENT_LIMITS.deductionSteps} passaggi.`);
+  } else {
+    if (bible.solution.deductionChain.length > STORY_CONTENT_LIMITS.deductionStepsMax) issues.push(`La deduzione deve contenere al massimo ${STORY_CONTENT_LIMITS.deductionStepsMax} passaggi.`);
+    bible.solution.deductionChain.forEach((step, index) => {
+    if (countWords(step) < STORY_CONTENT_LIMITS.deductionStep) issues.push(`Il passaggio ${index + 1} della deduzione deve contenere almeno ${STORY_CONTENT_LIMITS.deductionStep} parole.`);
+    if (countWords(step) > STORY_CONTENT_LIMITS.deductionStepMax) issues.push(`Il passaggio ${index + 1} della deduzione deve contenere al massimo ${STORY_CONTENT_LIMITS.deductionStepMax} parole.`);
+    });
+  }
+  const timeline = bible.timeline;
+  if (!Array.isArray(timeline) || timeline.length < 4) {
+    issues.push('La cronologia canonica deve contenere almeno quattro eventi.');
+  } else {
+    const ids = new Set<string>();
+    let previousTime = -1;
+    timeline.forEach((event, index) => {
+      const minutes = typeof event?.time === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(event.time)
+        ? Number(event.time.slice(0, 2)) * 60 + Number(event.time.slice(3))
+        : -1;
+      if (!event?.id?.trim() || ids.has(event.id)) issues.push('Gli eventi della cronologia devono avere identificativi univoci.');
+      else ids.add(event.id);
+      if (minutes < 0 || minutes <= previousTime) issues.push(`La cronologia deve avere orari HH:MM validi e in ordine crescente (evento ${index + 1}).`);
+      previousTime = minutes;
+      if (!event?.location?.trim() || !event?.event?.trim() || !Array.isArray(event.characters) || !event.characters.length) {
+        issues.push(`L’evento ${index + 1} della cronologia deve specificare luogo, fatto e personaggi coinvolti.`);
+      } else if (event.characters.some((name) => !nameSet.has(normalizeName(name)))) {
+        issues.push(`L’evento ${index + 1} cita un personaggio assente dal cast.`);
+      }
+    });
+  }
+  const culpritNames = bible.solution.culprits ?? [];
+  if (culpritNames.length !== 1 || culpritNames.some((name) => !nameSet.has(normalizeName(name)))) {
+    issues.push('La soluzione deve indicare un solo colpevole presente nel cast.');
+  }
+  const decisiveRecipients = new Set<string>();
   const clueIds = new Set<string>();
   const roundsWithDecisiveClue = new Set<number>();
   let corroboratingCount = 0;
   let redHerringCount = 0;
   for (const plan of bible.characterPlans) {
+    const relationTargets = Array.isArray(plan?.relationshipFacts) ? plan.relationshipFacts.map((relation) => normalizeName(relation.characterName)) : [];
+    if (relationTargets.length !== 3 || new Set(relationTargets).size !== 3 || relationTargets.some((target) => target === normalizeName(plan.name) || !nameSet.has(target))) {
+      issues.push(`Il personaggio «${plan?.name || 'senza nome'}» deve avere tre relazioni distinte con altri personaggi del cast.`);
+    }
+    if (Array.isArray(plan?.relationshipFacts) && plan.relationshipFacts.some((relation) => countWords(relation.fact) < 12)) {
+      issues.push(`Le relazioni di «${plan?.name || 'senza nome'}» devono descrivere fatti specifici e completi.`);
+    }
     const clues = plan?.cluePlan;
     if (!Array.isArray(clues) || clues.length !== 3 || new Set(clues.map((clue) => clue.round)).size !== 3) {
       issues.push(`La scheda di «${plan?.name || 'personaggio senza nome'}» deve avere un indizio per ciascuno dei tre round.`);
@@ -229,15 +322,25 @@ function validateBible(bible: StoryBible, playerCount: number): string[] {
       if (!clue.title?.trim() || !clue.content?.trim() || !clue.solutionLink?.trim() || !clue.organizerNote?.trim()) {
         issues.push(`Un indizio assegnato a «${plan.name}» è incompleto.`);
       }
-      if (countWords(clue.content) < 30) {
-        issues.push(`L’indizio «${clue.title || 'senza titolo'}» è troppo breve per essere utile al tavolo.`);
+      if (countWords(clue.content) < STORY_CONTENT_LIMITS.clue || countWords(clue.content) > STORY_CONTENT_LIMITS.clueMax) {
+        issues.push(`L’indizio «${clue.title || 'senza titolo'}» deve contenere ${STORY_CONTENT_LIMITS.clue}–${STORY_CONTENT_LIMITS.clueMax} parole.`);
       }
-      if (clue.type === 'decisive') roundsWithDecisiveClue.add(clue.round);
+      if (countWords(clue.solutionLink) < STORY_CONTENT_LIMITS.clueSolutionLink || countWords(clue.solutionLink) > STORY_CONTENT_LIMITS.clueSolutionLinkMax) {
+        issues.push(`Il collegamento dell’indizio «${clue.title || 'senza titolo'}» deve contenere ${STORY_CONTENT_LIMITS.clueSolutionLink}–${STORY_CONTENT_LIMITS.clueSolutionLinkMax} parole.`);
+      }
+      if (countWords(clue.organizerNote) < STORY_CONTENT_LIMITS.clueOrganizerNote || countWords(clue.organizerNote) > STORY_CONTENT_LIMITS.clueOrganizerNoteMax) {
+        issues.push(`La nota organizzatore dell’indizio «${clue.title || 'senza titolo'}» deve contenere ${STORY_CONTENT_LIMITS.clueOrganizerNote}–${STORY_CONTENT_LIMITS.clueOrganizerNoteMax} parole.`);
+      }
+      if (clue.type === 'decisive') {
+        roundsWithDecisiveClue.add(clue.round);
+        if (!culpritNames.some((culprit) => normalizeName(culprit) === normalizeName(plan.name))) decisiveRecipients.add(normalizeName(plan.name));
+      }
       if (clue.type === 'corroborating') corroboratingCount += 1;
       if (clue.type === 'red-herring') redHerringCount += 1;
     }
   }
   if (roundsWithDecisiveClue.size < 3) issues.push('Serve almeno un indizio decisivo in ciascuno dei tre round.');
+  if (decisiveRecipients.size < 3) issues.push('Gli indizi decisivi devono essere assegnati ad almeno tre innocenti distinti.');
   if (!corroboratingCount) issues.push('Serve almeno un indizio corroborante.');
   if (!redHerringCount) issues.push('Serve almeno un depistaggio plausibile.');
   return issues;
@@ -256,16 +359,34 @@ function validateCharacterBatch(characters: StoryData['characters'], expectedPla
   for (const character of characters) {
     const ownName = normalizeName(character.name);
     const minimumLengths: Array<[keyof StoryData['characters'][number], number]> = [
-      ['initialDescription', 100],
-      ['relationships', 165],
-      ['round1Info', 140],
-      ['round2Info', 140],
-      ['round3Info', 140],
-      ['secretsAndMotives', 165],
+      ['initialDescription', STORY_CONTENT_LIMITS.initialDescription],
+      ['relationships', STORY_CONTENT_LIMITS.relationships],
+      ['round1Info', STORY_CONTENT_LIMITS.roundInfo],
+      ['round2Info', STORY_CONTENT_LIMITS.roundInfo],
+      ['round3Info', STORY_CONTENT_LIMITS.roundInfo],
+      ['secretsAndMotives', STORY_CONTENT_LIMITS.secretsAndMotives],
     ];
     for (const [field, minimum] of minimumLengths) {
       const actual = countWords(character[field]);
       if (actual < minimum) issues.push(`La scheda di «${character.name}» è troppo breve in ${field} (${actual} parole, ne servono almeno ${minimum}).`);
+    }
+    const maximumLengths: Array<[keyof StoryData['characters'][number], number]> = [
+      ['initialDescription', STORY_CONTENT_LIMITS.initialDescriptionMax], ['relationships', STORY_CONTENT_LIMITS.relationshipsMax],
+      ['round1Info', STORY_CONTENT_LIMITS.roundInfoMax], ['round2Info', STORY_CONTENT_LIMITS.roundInfoMax],
+      ['round3Info', STORY_CONTENT_LIMITS.roundInfoMax], ['secretsAndMotives', STORY_CONTENT_LIMITS.secretsAndMotivesMax],
+    ];
+    for (const [field, maximum] of maximumLengths) {
+      const actual = countWords(character[field]);
+      if (actual > maximum) issues.push(`La scheda di «${character.name}» è troppo lunga in ${field} (${actual} parole, massimo ${maximum}).`);
+    }
+    for (const [field, content] of [['round1Info', character.round1Info], ['round2Info', character.round2Info], ['round3Info', character.round3Info]] as const) {
+      for (const label of ['Fatti che conosci:', 'Cosa puoi rivelare:', 'Obiettivo concreto:', 'Informazione nuova:']) {
+        if (!content.includes(label)) issues.push(`La scheda di «${character.name}» in ${field} deve includere «${label}».`);
+      }
+      const objective = content.match(/Obiettivo concreto:\s*([\s\S]*?)(?=Informazione nuova:|$)/u)?.[1] ?? '';
+      if (!allNames.some((name) => normalizeName(name) !== ownName && objective.toLocaleLowerCase('it').includes(name.toLocaleLowerCase('it')))) {
+        issues.push(`L’obiettivo del round in ${field} deve nominare un altro personaggio.`);
+      }
     }
     const opinions = character.opinionsOnOthers;
     const expectedOpinions = allNames.filter((name) => normalizeName(name) !== ownName).map(normalizeName);
@@ -274,7 +395,7 @@ function validateCharacterBatch(characters: StoryData['characters'], expectedPla
     } else {
       opinions.forEach((opinion) => {
         const actual = countWords(opinion.opinion);
-        if (actual < 40) issues.push(`L’opinione di «${character.name}» su «${opinion.characterName}» è troppo breve (${actual} parole, ne servono almeno 40).`);
+        if (actual < STORY_CONTENT_LIMITS.opinionMin || actual > STORY_CONTENT_LIMITS.opinionMax) issues.push(`L’opinione di «${character.name}» su «${opinion.characterName}» deve contenere ${STORY_CONTENT_LIMITS.opinionMin}–${STORY_CONTENT_LIMITS.opinionMax} parole (${actual} trovate).`);
       });
       const opinionNames = opinions.map((opinion) => normalizeName(opinion.characterName));
       if (new Set(opinionNames).size !== opinionNames.length || expectedOpinions.some((name) => !opinionNames.includes(name))) {
@@ -291,7 +412,9 @@ Progetta un caso originale, coerente e risolvibile per una cena con delitto ital
 
 La storia ha un solo colpevole, un movente credibile, una cronologia verificabile e una catena di deduzioni spiegata in passaggi. La soluzione è dimostrabile usando solo informazioni distribuibili ai partecipanti. Il documento comune non deve rivelare colpevole né contenere spoiler.
 
-Restituisci esattamente ${playerCount} piani personaggio con nomi e cognomi distinti. Ogni piano definisce ruolo pubblico, verità personale, segreto, movente o ragione del sospetto, alibi con orari e tre relazioni chiave coerenti; limita relationshipFacts a tre legami significativi per personaggio, non a tutti i possibili abbinamenti. Per ogni personaggio crea ESATTAMENTE tre indizi (uno per ciascun round), identificati univocamente. Ogni indizio è consegnato privatamente a quel personaggio; non inserire nella sua scheda informazioni che non potrebbe conoscere. Nel canovaccio descrivi ciascun indizio in 40–55 parole, indica quale fatto verifica e aggiungi una nota spoiler breve per l’organizzatore. Distribuisci almeno tre indizi decisivi, uno per round e a destinatari innocenti differenti; includi indizi corroboranti e depistaggi con una spiegazione vera e non contraddittoria. Nessun depistaggio deve rendere falsa la soluzione.
+Restituisci esattamente ${playerCount} piani personaggio con nomi e cognomi distinti. Ogni piano definisce ruolo pubblico, verità personale, segreto, movente o ragione del sospetto, alibi con orari e tre relazioni chiave coerenti; limita relationshipFacts a tre legami significativi per personaggio, non a tutti i possibili abbinamenti. Per ogni personaggio crea ESATTAMENTE tre indizi (uno per ciascun round), identificati univocamente. Ogni indizio è consegnato privatamente a quel personaggio; non inserire nella sua scheda informazioni che non potrebbe conoscere. Nel canovaccio descrivi ciascun indizio in 40–55 parole; il collegamento alla soluzione deve avere 15–45 parole e spiegare quale fatto verifica; la nota spoiler dell’organizzatore deve avere 10–45 parole. Distribuisci almeno tre indizi decisivi, uno per round e a destinatari innocenti differenti; includi indizi corroboranti e depistaggi con una spiegazione vera e non contraddittoria. Nessun depistaggio deve rendere falsa la soluzione.
+
+Rispetta i limiti del dossier: introduzione comune 200–350 parole; descrizione della scena 200–350; profili nel riepilogo del cast 45–70 parole ciascuno, uno per paragrafo separato da una riga vuota e con nome completo; movente 120–200; ricostruzione del metodo 120–200; retroscena 200–300. La catena della soluzione deve avere 4–6 passaggi, ciascuno di 25–80 parole. Includi una cronologia canonica di almeno quattro eventi con identificativi univoci, orari HH:MM in ordine strettamente crescente, luogo, evento e nomi dei presenti. Deve coprire arrivi, ultimo avvistamento, finestra del delitto e scoperta del corpo. Non usare testo riempitivo o ripetuto: ogni paragrafo deve aggiungere informazioni utili.
 
 Costruisci una trama originale, non grafica e adatta a un pubblico generale. Dai alle tre fasi un’escalation: sospetti e alibi nel primo round, riscontri e confronti nel secondo, collegamento probatorio e accusa nel terzo. Il crimine e il metodo devono rispettare i dettagli della scena e gli orari.
 ${correction ? `CORREGGI e rigenera il canovaccio risolvendo questi problemi: ${correction}` : ''}
@@ -315,6 +438,7 @@ function buildCharacterPrompt(bible: StoryBible, plans: CharacterPlan[], playerC
   const safeBible = {
     title: bible.title,
     commonDocument: bible.commonDocument,
+    timeline: bible.timeline,
     cast: bible.characterPlans.map(({ name, publicRole, relationshipFacts }) => ({ name, publicRole, relationshipFacts })),
     selectedCharacterPlans: plans,
     solutionFactsForInternalConsistency: bible.solution,
@@ -322,9 +446,9 @@ function buildCharacterPrompt(bible: StoryBible, plans: CharacterPlan[], playerC
   return `Fase: schede personaggio. Il numero di giocatori è: ${playerCount}. Genera le schede soltanto per questi nomi, senza aggiungerne o ometterne: ${plans.map((plan) => plan.name).join(', ')}.
 La bibbia seguente è canonica. Non cambiare nome, ruolo, alibi, movente, relazioni, fatti o indizi. Ogni fatto contraddittorio è un errore. La soluzione è contesto privato per te: non rivelare colpevole, metodo o soluzione nelle descrizioni pubbliche, nei riassunti, nelle relazioni o nelle schede degli innocenti. Il colpevole può ricevere istruzioni private coerenti per interpretare il proprio segreto. Non copiare le note spoiler nelle schede.
 
-Obiettivo: ogni scheda deve sostenere una partita di 2–3 ore ed essere sufficientemente ricca per circa 4–6 pagine stampate. Scrivi in italiano naturale, con paragrafi e dettagli concreti. Per ciascun personaggio produci circa 1.000–1.300 parole complessive: descrizione pubblica 100–140 parole; relazioni private almeno 180; ciascun round 150–190; segreti e movente almeno 180; ogni opinione sugli altri 45–65 parole. Non comprimere le risposte in riassunti o elenchi telegrafici.
+Obiettivo: ogni scheda deve sostenere una partita di 2–3 ore ed essere sufficientemente ricca per circa 4–6 pagine stampate. Scrivi in italiano naturale, con paragrafi e dettagli concreti. Rispetta queste soglie: descrizione pubblica 100–140 parole; relazioni private 180–260; ciascun round 150–190; segreti e movente 180–260; ogni opinione sugli altri 45–65 parole. Le opinioni sono una per ciascuno degli altri personaggi, quindi il totale varia con il numero di partecipanti; non comprimere i testi per un limite complessivo.
 
-Ogni round deve avere un’intestazione leggibile e contenere: fatti che il personaggio sa in quel momento, cosa può rivelare, una motivazione per partecipare alla conversazione, un obiettivo concreto rivolto a una persona nominata e un’informazione nuova che faccia avanzare l’indagine. Gli obiettivi devono essere realizzabili al tavolo. Le opinioni devono riflettere relazioni e pregiudizi specifici, non ripetere la stessa formula. Includi un’opinione per tutti gli altri ${playerCount - 1} personaggi, con nomi esatti dal cast. Rispetta i limiti di conoscenza: un personaggio non sa automaticamente ciò che un altro custodisce nel proprio piano o indizio.
+Ogni round deve contenere queste sezioni etichettate esattamente: «Fatti che conosci:», «Cosa puoi rivelare:», «Obiettivo concreto:» e «Informazione nuova:». L’obiettivo deve nominare un altro personaggio e descrivere un’azione realizzabile al tavolo. La cronologia canonica è: ${JSON.stringify(bible.timeline)}. Ogni round avanza l’indagine con fatti compatibili con cronologia e indizi. Le opinioni devono riflettere relazioni e pregiudizi specifici, non ripetere la stessa formula. Includi un’opinione per tutti gli altri ${playerCount - 1} personaggi, con nomi esatti dal cast. Rispetta i limiti di conoscenza: un personaggio non sa automaticamente ciò che un altro custodisce nel proprio piano o indizio.
 
 Bibbia canonica:
 ${JSON.stringify(safeBible)}
@@ -372,9 +496,12 @@ function composeStory(bible: StoryBible, characters: StoryData['characters']): S
   };
 }
 
-function buildVerificationPrompt(story: StoryData, playerCount: number): string {
+function buildVerificationPrompt(story: StoryData, playerCount: number, timeline: StoryBible['timeline']): string {
   return `Fase: verifica narrativa. Il numero di giocatori è: ${playerCount}.
-Esamina questa storia completa come revisore indipendente di un gioco dal vivo. Confronta canovaccio, alibi e orari, relazioni, round, indizi, destinatari, soluzione e deduzione. Controlla che il colpevole e il metodo non siano dichiarati nelle informazioni pubbliche o nelle schede degli innocenti; che ogni passaggio della deduzione sia sostenuto da indizi ottenibili; che i depistaggi siano spiegabili senza contraddire i fatti; che nomi e rapporti restino coerenti. Non modificare né riscrivere la storia: restituisci un rapporto JSON. approved è true solo se la soluzione è deducibile e non trovi contraddizioni sostanziali. Elenca in issues i problemi bloccanti e in warnings le migliorie facoltative. Sii concreto e cita nomi e indizi.
+Esamina questa storia completa come revisore indipendente di un gioco dal vivo. Confronta la cronologia canonica con alibi e orari, relazioni, round, indizi, destinatari, soluzione e deduzione. Controlla che il colpevole e il metodo non siano dichiarati nelle informazioni pubbliche o nelle schede degli innocenti; che ogni passaggio della deduzione sia sostenuto da indizi ottenibili; che i depistaggi siano spiegabili senza contraddire i fatti; che nomi e rapporti restino coerenti. Non modificare né riscrivere la storia: restituisci un rapporto JSON. approved è true solo se la soluzione è deducibile e non trovi contraddizioni sostanziali. Elenca in issues i problemi bloccanti e in warnings le migliorie facoltative. Sii concreto e cita nomi e indizi.
+
+CRONOLOGIA CANONICA:
+${JSON.stringify(timeline)}
 
 STORIA:
 ${JSON.stringify(story)}
@@ -393,8 +520,10 @@ export const generateMurderMysteryStory = async (playerCount: number, theme: str
   if (!theme?.trim()) throw new Error('Scegli un tema prima di generare la storia.');
 
   let story: StoryData;
+  let canonicalTimeline: StoryBible['timeline'] = [];
   try {
     const bible = await generateBible(playerCount, theme.trim());
+    canonicalTimeline = bible.timeline;
     const characters: StoryData['characters'] = [];
     for (let index = 0; index < bible.characterPlans.length; index += CHARACTER_BATCH_SIZE) {
       const batch = bible.characterPlans.slice(index, index + CHARACTER_BATCH_SIZE);
@@ -414,7 +543,7 @@ export const generateMurderMysteryStory = async (playerCount: number, theme: str
 
   try {
     const report = await requestJson<{ approved: boolean; summary: string; issues: string[]; warnings: string[] }>(
-      buildVerificationPrompt(story, playerCount),
+      buildVerificationPrompt(story, playerCount, canonicalTimeline),
       'story_verification',
       verificationSchema,
       0.1,
