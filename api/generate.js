@@ -34,4 +34,3 @@ export default async function handler(req, res) {
     return res.status(status).json({ error: status === 429 ? 'Limite temporaneo del servizio AI. Attendi un minuto e riprova.' : 'Il servizio AI non ha completato la richiesta. Riprova.' });
   }
 }
-
