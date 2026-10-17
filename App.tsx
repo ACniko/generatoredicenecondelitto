@@ -18,13 +18,13 @@ import {
 const heroShowcase = [
   {
     icon: <BeakerIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
-    title: 'Generazione immediata',
-    description: "Temi sintetici diversi ad ogni visita, pronti per essere adattati al tuo gruppo."
+    title: 'Temi rapidi, storie complete',
+    description: "Scegli un tema e crea una storia originale pensata per una partita di 2–3 ore."
   },
   {
     icon: <MapIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
     title: 'Materiale completo',
-    description: "PDF per round con schede personaggio, documento comune e soluzione già impaginati."
+    description: "PDF A4 con schede individuali, indizi distribuiti per round, guida e soluzione per l’organizzatore."
   },
   {
     icon: <UserGroupIcon className="w-6 h-6 text-amber-300" aria-hidden="true" />,
@@ -38,7 +38,7 @@ const howItWorks = [
     icon: <UserGroupIcon className="w-7 h-7 text-amber-300" aria-hidden="true" />,
     title: 'Configura la serata',
     description:
-      "Scegli numero di partecipanti e tema. L'intelligenza artificiale propone rapidamente nuove idee sintetiche."
+      "Scegli numero di partecipanti e tema. L'intelligenza artificiale prepara una storia completa, pensata per una serata intera."
   },
   {
     icon: <MapIcon className="w-7 h-7 text-amber-300" aria-hidden="true" />,
@@ -158,7 +158,7 @@ const App: React.FC = () => {
             <div className="space-y-6">
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">Esperienze investigative accessibili</p>
               <h1 className="text-4xl font-bold text-white md:text-5xl">
-                Organizza una cena con delitto coinvolgente in pochi minuti
+                Organizza una cena con delitto pronta per una serata intera
               </h1>
               <p className="text-base text-slate-300 md:text-lg">
                 Genera storie originali verificate, scarica materiali pronti e segui le guide per gestire ogni fase della serata.
@@ -199,11 +199,11 @@ const App: React.FC = () => {
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-200">Generatore rapido</p>
                   <h2 className="text-2xl font-semibold text-white md:text-3xl">Crea la tua storia subito</h2>
                   <p className="mt-2 text-sm text-slate-300">
-                    Inserisci poche informazioni, lascia che l'AI proponga temi concisi e scarica i PDF per ogni round. Ideale anche su smartphone.
+                    Scegli un tema e il numero di partecipanti. L’AI prepara un caso completo con indizi e materiali da distribuire in tre round.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-amber-200">
-                  <HourGlassIcon className="w-4 h-4" aria-hidden="true" /> tempo medio 5 minuti
+                  <HourGlassIcon className="w-4 h-4" aria-hidden="true" /> partita consigliata: 2–3 ore
                 </div>
               </div>
 
@@ -248,7 +248,16 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {story && !isLoading && <StoryDisplay story={story} onReset={handleReset} />}
+              {story && !isLoading && (
+                <>
+                  {story.verificationWarning && (
+                    <div className="mb-6 rounded-lg border border-amber-400/40 bg-amber-400/10 p-4 text-amber-100" role="status">
+                      {story.verificationWarning}
+                    </div>
+                  )}
+                  <StoryDisplay story={story} onReset={handleReset} />
+                </>
+              )}
             </div>
           </section>
 

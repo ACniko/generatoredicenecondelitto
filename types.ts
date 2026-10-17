@@ -20,6 +20,18 @@ export interface Solution {
   motive: string;
   how: string;
   backstory: string;
+  deductionChain: string[];
+}
+
+export interface EvidenceClue {
+  id: string;
+  title: string;
+  round: 1 | 2 | 3;
+  recipients: string[];
+  type: 'decisive' | 'corroborating' | 'red-herring';
+  content: string;
+  solutionLink: string;
+  organizerNote: string;
 }
 
 export interface CommonDocument {
@@ -29,8 +41,10 @@ export interface CommonDocument {
 }
 
 export interface StoryData {
+  verificationWarning?: string;
   title: string;
   commonDocument: CommonDocument;
   characters: Character[];
+  evidence: EvidenceClue[];
   solution: Solution;
 }
