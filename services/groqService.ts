@@ -270,103 +270,24 @@ Tutti i campi sono OBBLIGATORI e non devono essere omessi. Verifica attentamente
           response_format: responseFormat
         })
       });
-      if (!correctionResponse.ok) throw new Error(`Generazione non riuscita: servono ${playerCount} personaggi. Riprova.`);
+      if (!correctionResponse.ok) throw new Error(`Generazione non riuscita: servono ${playerCount} personaggi. Riprova con un tema più breve o un numero inferiore di partecipanti.`);
       const correctionResult = await correctionResponse.json();
       try { storyData = JSON.parse(correctionResult.content) as StoryData; }
       catch { throw new Error('La correzione AI non ha restituito JSON valido. Riprova.'); }
       if (!storyData?.commonDocument || !Array.isArray(storyData.characters) || !storyData.solution || storyData.characters.length !== playerCount) {
-        throw new Error(`La storia generata non contiene esattamente ${playerCount} partecipanti. Riprova.`);
+        throw new Error(`La storia generata non contiene esattamente ${playerCount} partecipanti. Riprova con un tema più breve o un numero inferiore di partecipanti.`);
       }
       storyData = ensureUniqueCharacterNames(storyData);
     }
 
     // --- 2. VERIFICATION STEP ---
     const verificationPrompt = `
-Sei un detective esperto e un maestro della logica con un'attenzione maniacale ai dettagli. Il tuo compito ÃƒÆ’Ã‚Â¨ revisionare meticolosamente la seguente storia "cena con delitto" per individuare e correggere OGNI possibile incongruenza, contraddizione o buco di trama. La storia DEVE essere difficile ma ASSOLUTAMENTE risolvibile attraverso la deduzione logica.
+Sei un detective esperto. Verifica la coerenza logica e narrativa della storia JSON qui sotto. Controlla alibi, indizi, movente, soluzione, relazioni e colpevoli. Correggi solo contraddizioni evidenti con modifiche minime. Mantieni tutti i ${playerCount} personaggi e tutti i campi presenti. Restituisci solo l'oggetto JSON completo, senza spiegazioni.
 
-    storyData = ensureUniqueCharacterNames(storyData);
 Ecco i dati della storia da esaminare:
 ${JSON.stringify(storyData, null, 2)}
 
-Esegui i seguenti controlli APPROFONDITI:
-
-1. **Coerenza Temporale**: Verifica che tutti gli eventi, gli alibi e le azioni dei personaggi siano temporalmente coerenti. Controlla che non ci siano sovrapposizioni impossibili o contraddizioni nelle tempistiche.
-
-2. **Coerenza Narrativa**: Assicurati che le informazioni fornite nei vari round siano coerenti tra loro e con la soluzione finale. Ogni personaggio deve avere una storia coerente dall'inizio alla fine.
-
-3. **Movente del Colpevole**: Il movente DEVE essere:
-   - Credibile e sufficientemente forte per giustificare un omicidio
-   - Chiaramente collegato al colpevole
-   - Supportato da indizi distribuiti nella storia
-   - Logicamente consistente con il carattere e la storia del personaggio
-
-4. **RisolvibilitÃƒÆ’Ã‚Â  Garantita**: Il colpevole DEVE poter essere identificato unendo logicamente gli indizi sparsi tra le schede dei personaggi. Verifica che:
-   - Esistano indizi sufficienti per identificare il colpevole
-   - Gli indizi siano distribuiti in modo equilibrato tra i personaggi
-   - La soluzione non si basi su informazioni che i giocatori non possono ottenere
-   - Ci sia almeno un indizio cruciale che punti al colpevole in modo inequivocabile
-
-5. **Piste False vs. Errori**: Gli indizi fuorvianti DEVONO essere distrazioni plausibili e non errori logici. Ogni pista falsa deve:
-   - Sembrare inizialmente convincente
-   - Essere logicamente spiegabile nel contesto della storia
-   - Poter essere scartata attraverso un'analisi attenta degli altri indizi
-
-6. **Controllo Incrociato delle Relazioni**: Verifica che le relazioni tra i personaggi siano coerenti in entrambe le direzioni. Se A odia B, questo deve riflettersi in qualche modo anche nella descrizione di B.
-
-7. **Verifica delle Opinioni**: Controlla che le opinioni che ogni personaggio ha degli altri siano coerenti con le loro relazioni e con la trama generale.
-
-Se la storia ÃƒÆ’Ã‚Â¨ perfettamente coerente, logica e risolvibile, restituisci l'oggetto JSON originale senza alcuna modifica.
-
-Se trovi delle incongruenze, il tuo obiettivo ÃƒÆ’Ã‚Â¨ correggerle con la **minima modifica possibile**. Non riscrivere la storia. Apporta solo le modifiche necessarie per risolvere le contraddizioni e garantire la coerenza logica, mantenendo la complessitÃƒÆ’Ã‚Â  originale.
-
-IMPORTANTE: Quando correggi la storia, segui queste linee guida:
-1. Assicurati che ogni personaggio abbia un alibi chiaro e verificabile
-2. Verifica che gli indizi siano distribuiti in modo equilibrato nei tre round
-3. Controlla che ogni personaggio abbia un motivo plausibile per essere sospettato
-4. Assicurati che il colpevole abbia lasciato tracce o indizi che possano essere scoperti
-5. Verifica che non ci siano "salti logici" necessari per risolvere il caso
-6. Controlla che tutti i dettagli della scena del crimine siano coerenti con il metodo dell'omicidio
-7. Assicurati che le relazioni tra i personaggi siano realistiche e ben definite
-
-ÃƒÆ’Ã‹â€  FONDAMENTALE che tu rispetti ESATTAMENTE questa struttura JSON:
-
-Esempio di struttura:
-{
-  "title": "Titolo della Storia",
-  "commonDocument": {
-    "introduction": "Testo dell'introduzione...",
-    "crimeSceneMapDescription": "Descrizione dettagliata della scena del crimine...",
-    "characterOverviews": "Panoramica di tutti i personaggi..."
-  },
-  "characters": [
-    {
-      "name": "Nome Personaggio 1",
-      "isCulprit": true/false,
-      "initialDescription": "Descrizione iniziale...",
-      "relationships": "Relazioni con gli altri personaggi...",
-      "round1Info": "Informazioni per il round 1...",
-      "round2Info": "Informazioni per il round 2...",
-      "round3Info": "Informazioni per il round 3...",
-      "secretsAndMotives": "Segreti e motivi...",
-      "opinionsOnOthers": [
-        {
-          "characterName": "Nome Personaggio 2",
-          "opinion": "Opinione su questo personaggio..."
-        },
-        // Ripeti per tutti gli altri personaggi
-      ]
-    },
-    // Ripeti per tutti i personaggi (esattamente ${playerCount})
-  ],
-  "solution": {
-    "culprits": ["Nome Colpevole 1", "Nome Colpevole 2"],
-    "motive": "Motivo del delitto...",
-    "how": "Come ÃƒÆ’Ã‚Â¨ stato commesso il delitto...",
-    "backstory": "Storia completa dietro il delitto..."
-  }
-}
-
-Restituisci la storia finale, verificata e logicamente solida, come un singolo oggetto JSON che rispetti rigorosamente lo schema fornito sopra. Tutti i campi sono OBBLIGATORI e non devono essere omessi. Non aggiungere commenti o spiegazioni al di fuori dell'oggetto JSON.
+Restituisci la storia completa senza rimuovere personaggi o campi.
 `;
     
     try {
@@ -393,7 +314,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
       // Verifica se c'ÃƒÆ’Ã‚Â¨ un errore nella risposta di verifica
       if (verificationResult.error) {
         console.warn(`API verification error: ${verificationResult.error}`);
-        return storyData; // Fallback alla storia originale
+        return { ...storyData, verificationWarning: 'La storia è stata generata, ma la verifica automatica non è riuscita. Controlla la soluzione prima della partita.' } as StoryData;
       }
       
       const verifiedJsonText = verificationResult.content.trim();
@@ -410,7 +331,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
       // Verifica che la struttura dei dati sia valida
       if (!verifiedStoryData || !verifiedStoryData.commonDocument || !verifiedStoryData.characters || !verifiedStoryData.solution) {
         console.warn("La struttura dei dati verificata non ÃƒÆ’Ã‚Â¨ valida. Mancano campi obbligatori. VerrÃƒÆ’Ã‚Â  utilizzata la storia originale.");
-        return storyData;
+        return { ...storyData, verificationWarning: 'La storia è stata generata, ma la verifica automatica non è riuscita. Controlla la soluzione prima della partita.' } as StoryData;
       }
       
       // Verifica che il numero di personaggi sia corretto
@@ -462,7 +383,7 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
     } catch (verificationError) {
       console.error("Errore durante il passaggio di verifica dell'IA:", verificationError);
       console.warn("A causa di un errore nella verifica, verrÃƒÆ’Ã‚Â  utilizzata la storia non verificata.");
-      return storyData; // Fallback to the original story
+      return { ...storyData, verificationWarning: 'La storia è stata generata, ma la verifica automatica non è riuscita. Controlla la soluzione prima della partita.' } as StoryData;
     }
 
   } catch (error) {
@@ -470,7 +391,6 @@ Restituisci la storia finale, verificata e logicamente solida, come un singolo o
     throw new Error("Failed to generate murder mystery story from API.");
   }
 };
-
 
 
 
