@@ -1,277 +1,205 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-
-const { outputFiles } = await build({
-  entryPoints: ['services/groqService.ts'],
-  bundle: true,
-  write: false,
-  platform: 'browser',
-  format: 'esm',
-  target: 'es2022'
-});
+import { makeBible, makeCharacter, makeCanonical } from './generationFixtures.mjs';
+const { outputFiles } = await build({ entryPoints: ['services/groqService.ts'], bundle: true, write: false, platform: 'browser', format: 'esm', plugins: [{ name: 'runtime', setup(build) { build.onResolve({filter: /generationRuntime/}, () => ({path:'runtime',namespace:'mock'})); build.onLoad({filter:/.*/, namespace:'mock'}, () => ({contents:'export const createGenerationRuntime = (...args) => globalThis.__generationRuntime(...args);',loader:'js'})); }}] });
 const service = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 
-const makeBible = (playerCount) => {
-  const names = Array.from({ length: playerCount }, (_, i) => `Personaggio ${i + 1} Rossi`);
-  return {
-    title: 'Il segreto della villa',
-    victimName: 'Alberto Neri',
-    commonDocument: {
-      introduction: Array.from({ length: 30 }, (_, i) => `Introduzione della villa e del delitto ${i + 1}.`).join(' '),
-      crimeSceneMapDescription: Array.from({ length: 30 }, (_, i) => `Descrizione verificabile della scena e degli ambienti ${i + 1}.`).join(' '),
-      characterOverviews: names.map((name) => `${name}: ${Array.from({ length: 10 }, (_, i) => `ruolo pubblico relazione villa ${i + 1}.`).join(' ')}`).join('\n\n')
-    },
-    solution: {
-      culprits: [names[0]],
-      motive: Array.from({ length: 20 }, (_, i) => `Movente documentale credibile e personale ${i + 1}.`).join(' '),
-      how: Array.from({ length: 20 }, (_, i) => `Metodo verificabile coerente con la scena e la cronologia ${i + 1}.`).join(' '),
-      backstory: Array.from({ length: 25 }, (_, i) => `Retroscena dei rapporti tra gli ospiti e la vittima ${i + 1}.`).join(' '),
-      deductionChain: [1, 2, 3, 4].map((step) => Array.from({ length: 3 }, (_, i) => `Passaggio deduttivo ${step} collega una prova concreta alla cronologia ${i + 1}.`).join(' '))
-    },
-    timeline: [
-      { id: 't1', time: '20:00', location: 'sala da pranzo', event: 'Gli ospiti arrivano per la cena.', characters: names.slice(0, 3) },
-      { id: 't2', time: '20:30', location: 'biblioteca', event: 'La vittima consulta il registro.', characters: names.slice(0, 2) },
-      { id: 't3', time: '21:00', location: 'sala da pranzo', event: 'Si tiene il brindisi.', characters: names.slice(1, 4) },
-      { id: 't4', time: '21:30', location: 'corridoio', event: 'Un ospite trova la vittima.', characters: names.slice(0, 2) }
-    ],
-    characterPlans: names.map((name, index) => ({
-      name,
-      publicRole: 'Ospite e responsabile di una parte dell’evento.',
-      truth: 'Conosce un dettaglio verificabile della serata.',
-      privateSecret: 'Nasconde un comportamento imbarazzante ma non il delitto.',
-      motive: 'Ha avuto un conflitto personale con la vittima.',
-      alibiTimeline: 'Tra le 21 e le 22 era nella sala principale.',
-      relationshipFacts: names.filter((other) => other !== name).slice(0, 3).map((characterName) => ({ characterName, fact: 'Il loro rapporto è segnato da un debito, una promessa infranta e un interesse condiviso.' })),
-      cluePlan: [1, 2, 3].map((round) => ({
-        id: `clue-${index}-${round}`,
-        title: `Prova del round ${round}`,
-        round,
-        type: index === round ? 'decisive' : index === 0 && round === 1 ? 'corroborating' : 'red-herring',
-        content: 'Un documento originale colloca il registro nella biblioteca alle ventuno. Il segno d inchiostro coincide con la copia trovata vicino al calice. Confrontando le due date, gli ospiti possono verificare chi ha avuto accesso al mobile e quale alibi non coincide con gli orari annotati.',
-        solutionLink: 'Questa prova collega l’orario del registro alla finestra del delitto e consente di dedurre chi poteva accedere alla biblioteca senza lasciare una traccia coerente.',
-        organizerNote: 'Questa nota è riservata all’organizzatore e contiene il significato della prova.'
-      }))
-    }))
-  };
-};
+async function run(count=4, mutate=()=>{}, supplied) {
+ const bible=makeBible(count), plan=makeCanonical(count), calls=[], saves=[];
+ const stages=supplied??{};
+ const runtime={checkpoint:{stages,status:'running'},getStage:k=>stages[k],saveStage:(k,v,validated)=>{stages[k]={value:structuredClone(v),validated};saves.push({k,validated,value:structuredClone(v)});},invalidateStages:keys=>keys.forEach(k=>delete stages[k]),progress(){},assertActive(){},pause(){},complete:s=>s,async requestJson(prompt,phase,schema){const data=JSON.parse(prompt.split('\nINPUT:\n')[1]);calls.push({phase,data,prompt});let result;
+ if(phase==='canonical_plan') result=plan;
+ else if(phase==='common_document') result=structuredClone(bible.commonDocument);
+ else if(phase==='solution') result=structuredClone(bible.solution);
+ else if(phase==='evidence_batch') result={evidence:data.selected.map(x=>({...bible.characterPlans.flatMap(c=>c.cluePlan).find(c=>c.id===x.id),recipients:[bible.characterPlans[Number(x.recipientId.slice(1))].name]}))};
+ else if(phase==='character_batch') result={characters:data.selected.map(x=>({...makeCharacter(x.name,bible.characterPlans.map(c=>c.name)),isCulprit:x.id==='c0'}))};
+ else if(phase==='story_verification') result={approved:true,summary:'OK',issues:[],warnings:[]};
+ else if(phase==='field_repair') result={value:data.current};
+ await mutate({phase,data,result,calls,stages,bible,plan,saves,schema});return result;
+ }};
+ globalThis.__generationRuntime=()=>runtime;
+ try { const story=await service.generateMurderMysteryStory(count,'Villa');return {story,calls,saves,stages,bible}; } catch(error) { Object.assign(error,{calls,saves,stages,bible}); throw error; }
+}
+test('compact plan precedes separate prose, batched cards and evidence; checkpoints raw then validated',async()=>{const {story,calls,saves}=await run();assert.equal(calls[0].phase,'canonical_plan');assert.equal(story.characters.length,4);assert.equal(story.evidence.length,12);assert.equal(calls.filter(c=>c.phase==='character_batch').length,2);assert.equal(calls.filter(c=>c.phase==='evidence_batch').length,3);assert.ok(calls.filter(c=>c.phase==='character_batch').every(c=>!c.prompt.includes('commonDocument')));assert.ok(saves.some(s=>!s.validated));assert.ok(saves.some(s=>s.validated));});
+test('accepted checkpoint stages are reused without requests',async()=>{const a=await run();const b=await run(4,()=>{},a.stages);assert.deepEqual(b.story,a.story);assert.equal(b.calls.length,0);});
 
-const makeCharacter = (name, allNames) => {
-  const text = (word, count) => Array.from({ length: count }, () => word).join(' ');
-  return {
-    name,
-    isCulprit: false,
-    initialDescription: text('personalità', 105),
-    relationships: text('relazione', 185),
-    round1Info: `Fatti che conosci: ${text('rivelazione', 150)} Cosa puoi rivelare: ${text('brindisi', 4)} Obiettivo concreto: parla con ${allNames.find((other) => other !== name)} e chiedi dell alibi. Informazione nuova: ${text('registro', 10)}`,
-    round2Info: `Fatti che conosci: ${text('confronto', 150)} Cosa puoi rivelare: ${text('biblioteca', 4)} Obiettivo concreto: confronta con ${allNames.find((other) => other !== name)} gli orari. Informazione nuova: ${text('chiave', 10)}`,
-    round3Info: `Fatti che conosci: ${text('deduzione', 150)} Cosa puoi rivelare: ${text('calice', 4)} Obiettivo concreto: chiedi a ${allNames.find((other) => other !== name)} di spiegare la contraddizione. Informazione nuova: ${text('prova', 10)}`,
-    secretsAndMotives: text('movente', 185),
-    opinionsOnOthers: allNames.filter((other) => other !== name).map((characterName) => ({ characterName, opinion: text('giudizio', 45) }))
-  };
-};
-
-async function runGeneration(playerCount, { theme = 'Mistero nella villa', rejectVerification = false, firstCallRateLimited = false, retrySeconds = 1, firstCallLongRateLimit = false, firstCallStructuredFailure = false, firstCharacterBatchIncomplete = false, shortCommonDocument = false, repairShortDocument = false, firstRepairInvalid = false, shortClue = false, victimInTimeline = false, shortRelationship = false, invalidTimeline = false } = {}) {
-  const bible = makeBible(playerCount);
-  if (shortCommonDocument) bible.commonDocument.introduction = 'Introduzione troppo breve.';
-  if (invalidTimeline) bible.timeline[2].time = '19:00';
-  if (shortClue) bible.characterPlans[1].cluePlan[0].content = 'Indizio troppo breve.';
-  if (victimInTimeline) bible.timeline[1].characters.push(bible.victimName);
-  if (shortRelationship) bible.characterPlans[0].relationshipFacts[0].fact = 'Un vecchio debito.';
-  let repairCount = 0;
-  const allNames = bible.characterPlans.map((plan) => plan.name);
-  const calls = [];
-  let rateLimitReturned = false;
-  let structuredFailureReturned = false;
-  let characterBatchReturnedIncomplete = false;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url, options) => {
-    const request = JSON.parse(options.body);
-    const schemaName = request.response_format.json_schema.name;
-    calls.push({ endpoint: url, schemaName, model: request.model, prompt: request.prompt, schema: request.response_format.json_schema.schema });
-    if (firstCallLongRateLimit) {
-      return new Response(JSON.stringify({ error: 'Limite temporaneo del servizio AI. Attendi circa 4 minuti e 48 secondi e riprova.' }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json', 'Retry-After': '288' }
-      });
+function repairOriginal({data,result,bible,schema}) {
+  if(data.targets) {
+    for(const target of data.targets) {
+      const single={value:null};
+      repairOriginal({data:{...target,stage:data.stage},result:single,bible,schema:{properties:{value:schema.properties[target.key]}}});
+      result[target.key]=single.value;
     }
-    if (firstCallRateLimited && !rateLimitReturned) {
-      rateLimitReturned = true;
-      return new Response(JSON.stringify({ error: 'Limite temporaneo. Attendi circa 1 secondo.' }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json', 'Retry-After': String(retrySeconds) }
-      });
-    }
-    if (firstCallStructuredFailure && !structuredFailureReturned) {
-      structuredFailureReturned = true;
-      return new Response(JSON.stringify({ error: 'Risposta strutturata non valida.', retryable: true }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    let payload;
-    if (schemaName === 'story_bible') payload = bible;
-    else if (schemaName === 'bible_text_repair') {
-      repairCount += 1;
-      const fields = JSON.parse(request.prompt.split('CAMPI:\n')[1].split('\nCONTESTO CANONICO:')[0]);
-      payload = Object.fromEntries(fields.map(({ key, path }) => {
-        const original = path.replace(/\[(\d+)\]/g, '.$1').split('.').reduce((value, part) => value[part], makeBible(playerCount));
-        return [key, repairShortDocument && !(firstRepairInvalid && repairCount === 1) ? original : 'Ancora breve.'];
-      }));
-    } else if (schemaName === 'character_batch') {
-      const line = request.prompt.split('\n')[0];
-      const namesText = line.split('senza aggiungerne o ometterne: ')[1].split('.')[0];
-      const selectedNames = namesText.split(', ');
-      payload = { characters: selectedNames.map((name) => makeCharacter(name, allNames)) };
-      if (firstCharacterBatchIncomplete && !characterBatchReturnedIncomplete) {
-        characterBatchReturnedIncomplete = true;
-        payload.characters[0].initialDescription = 'Descrizione troppo breve.';
-      }
-    } else if (schemaName === 'story_verification') {
-      payload = {
-        approved: !rejectVerification,
-        summary: rejectVerification ? 'La cronologia di prova richiede un controllo.' : 'Nessuna contraddizione sostanziale.',
-        issues: rejectVerification ? ['Controllare il passaggio del calice tra biblioteca e sala.'] : [],
-        warnings: []
-      };
-    } else throw new Error(`Fase imprevista: ${schemaName}`);
-    return new Response(JSON.stringify({ content: JSON.stringify(payload) }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  };
-  try {
-    const story = await service.generateMurderMysteryStory(playerCount, theme);
-    return { story, calls };
-  } finally {
-    globalThis.fetch = originalFetch;
+    return;
+  }
+  const names=bible.characterPlans.map(c=>c.name);
+  const card=name=>({...makeCharacter(name,names),isCulprit:name===names[0]});
+  const clues=bible.characterPlans.flatMap(c=>c.cluePlan.map(cl=>({...cl,recipients:[c.name]})));
+  const target=schema.properties.value;
+  if(data.code==='missing_character') result.value=card(target.properties.name.enum[0]);
+  else if(data.code==='missing_opinion') result.value={characterName:target.properties.characterName.enum[0],opinion:Array(45).fill('giudizio').join(' ')};
+  else if(data.code==='missing_public_profile') {const name=target.properties.characterName.enum[0];result.value={characterName:name,description:bible.commonDocument.characterOverviews.split('\n\n')[names.indexOf(name)]};}
+  else if(data.code==='missing_clue') result.value=clues.find(c=>c.id===target.properties.id.enum[0]);
+  else {
+    let root;
+    if(data.stage==='common_document') root={...bible.commonDocument,publicProfiles:bible.commonDocument.characterOverviews.split('\n\n').map((description,i)=>({characterName:names[i],description}))};
+    else if(data.stage==='solution') root=bible.solution;
+    else if(data.stage==='canonical_plan') root=makeCanonical(names.length);
+    else if(data.stage.startsWith('characters:')) root={characters:data.stage.slice(11).split(',').map(id=>card(names[Number(id.slice(1))]))};
+    else root={evidence:data.stage.slice(9).split(',').map(id=>clues.find(c=>c.id===id))};
+    result.value=data.path.reduce((v,key)=>v[key],root);
   }
 }
-
-test('staged generation makes complete, long four-player cards and preserves full story on review failure', async () => {
-  const { story, calls } = await runGeneration(4, { rejectVerification: true, firstCallRateLimited: true });
-  assert.equal(story.characters.length, 4);
-  assert.equal(story.evidence.length, 12);
-  assert.equal(story.solution.deductionChain.length, 4);
-  assert.ok(story.verificationWarning);
-  assert.ok(story.characters.every((character) => character.isCulprit === (character.name === story.solution.culprits[0])));
-  assert.ok(story.characters.every((character) => character.opinionsOnOthers.length === 3));
-  assert.ok(calls.every((call) => call.model === 'openai/gpt-oss-120b'));
-  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 2);
-  assert.equal(calls.filter((call) => call.schemaName === 'character_batch').length, 2);
-  assert.equal(calls.filter((call) => call.schemaName === 'story_verification').length, 1);
-  assert.equal(calls.find((call) => call.schemaName === 'story_verification').endpoint, '/api/verify');
-  for (const character of story.characters) {
-    const wordCount = [character.initialDescription, character.relationships, character.round1Info, character.round2Info, character.round3Info, character.secretsAndMotives, ...character.opinionsOnOthers.map((opinion) => opinion.opinion)]
-      .join(' ').match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu).length;
-    assert.ok(wordCount >= 955, `${character.name} deve contenere una scheda sostanziale`);
+test('only a short common introduction is patched; all accepted prose remains identical',async()=>{
+ const baseline=await run(5);
+ const fixed=await run(5,args=>{if(args.phase==='common_document')args.result.introduction='Breve';if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);
+ const repairs=fixed.calls.filter(c=>c.phase==='field_repair');assert.equal(repairs.length,1);assert.deepEqual(repairs[0].data.path,['introduction']);
+ assert.equal(fixed.calls.filter(c=>c.phase==='canonical_plan').length,1);
+ assert.ok(fixed.saves.find(s=>s.k==='common_document'&&!s.validated&&s.value.introduction==='Breve'));
+});
+test('a broken round repairs only that round and preserves every accepted sibling',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='character_batch'&&args.data.selected[0].id==='c0')args.result.characters[0].round2Info='Breve';if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);
+ assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.path),[['characters',0,'round2Info']]);
+ assert.equal(fixed.calls.filter(c=>c.phase==='character_batch').length,2);
+});
+test('one missing opinion requests only that opinion, with no character regeneration',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='character_batch'&&args.data.selected[0].id==='c0')args.result.characters[0].opinionsOnOthers.pop();if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);
+ assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>({code:c.data.code,path:c.data.path})),[{code:'missing_opinion',path:['characters',0,'opinionsOnOthers',2]}]);
+});
+test('several absent opinions are independent patches with accepted opinions preserved',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='character_batch'&&args.data.selected[0].id==='c0')args.result.characters[0].opinionsOnOthers.splice(1);if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);assert.equal(fixed.calls.filter(c=>c.phase==='field_repair').length,2);
+});
+test('one missing character appends only that card and preserves its complete batch sibling',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='character_batch'&&args.data.selected[0].id==='c0')args.result.characters.shift();if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);
+ assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.code),['missing_character']);
+});
+test('one missing clue repairs only that evidence unit',async()=>{
+ const baseline=await run();let removed=false;
+ const fixed=await run(4,args=>{if(args.phase==='evidence_batch'&&!removed){args.result.evidence.pop();removed=true;}if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.code),['missing_clue']);
+});
+test('bad clue round repairs only its scalar round with fixed clue identity and recipients',async()=>{
+ const baseline=await run();let changed=false;
+ const fixed=await run(4,args=>{if(args.phase==='evidence_batch'&&!changed){args.result.evidence[0].round=2;changed=true;}if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.path),[['evidence',0,'round']]);
+});
+test('duplicate cards, clues and opinions are removed without regenerating accepted entries',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='character_batch'){args.result.characters[0].opinionsOnOthers.push(structuredClone(args.result.characters[0].opinionsOnOthers[0]));args.result.characters.push(structuredClone(args.result.characters[0]));}if(args.phase==='evidence_batch')args.result.evidence.push(structuredClone(args.result.evidence[0]));});
+ assert.deepEqual(fixed.story,baseline.story);assert.equal(fixed.calls.filter(c=>c.phase==='field_repair').length,0);
+});
+test('three unsuccessful field patches pause with a retained draft and resume the same target',async()=>{
+ let failure;
+ try{await run(4,args=>{if(args.phase==='common_document')args.result.introduction='Breve';});}catch(error){failure=error;}
+ assert.ok(failure);assert.match(failure.message,/pausa/);assert.equal(failure.calls.filter(c=>c.phase==='field_repair').length,3);
+ assert.equal(failure.stages.common_document.value.introduction,'Breve');assert.equal(failure.stages.common_document.validated,false);
+ const fixed=await run(4,args=>{if(args.phase==='field_repair')repairOriginal(args);},failure.stages);
+ assert.equal(fixed.calls.filter(c=>c.phase==='canonical_plan').length,0);assert.equal(fixed.calls.filter(c=>c.phase==='common_document').length,0);assert.equal(fixed.calls.filter(c=>c.phase==='field_repair').length,1);
+});
+test('canonical timeline is repaired before rendering and never triggers full plan regeneration',async()=>{
+ const fixed=await run(4,args=>{if(args.phase==='canonical_plan')args.result.timeline[2].time='19:00';if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.calls[1].data.path,['timeline',2,'time']);assert.equal(fixed.calls[1].phase,'field_repair');assert.equal(fixed.calls[2].phase,'common_document');assert.equal(fixed.calls.filter(c=>c.phase==='canonical_plan').length,1);
+});
+test('restored validated flags are checked again; corrupt prose is repaired',async()=>{
+ const a=await run();a.stages['characters:c0,c1'].value.characters[0].round2Info='Breve';
+ const fixed=await run(4,args=>{if(args.phase==='field_repair')repairOriginal(args);},a.stages);
+ assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.path),[['characters',0,'round2Info']]);assert.equal(fixed.calls.filter(c=>c.phase==='story_verification').length,1);
+});
+test('final verifier sees the full story and rejection or network failure retains every card',async()=>{
+ const rejected=await run(4,args=>{if(args.phase==='story_verification'){assert.equal(args.data.story.characters.length,4);assert.equal(args.data.story.evidence.length,12);args.result.approved=false;args.result.issues=['Controllare cronologia'];}});
+ assert.ok(rejected.story.verificationWarning);assert.equal(rejected.story.characters.length,4);
+ const failed=await run(4,args=>{if(args.phase==='story_verification')throw new Error('Network');});assert.ok(failed.story.verificationWarning);
+});
+test('an abort in final verification propagates instead of completing with a warning',async()=>{
+ await assert.rejects(()=>run(4,args=>{if(args.phase==='story_verification')throw new DOMException('Interrotto','AbortError');}),{name:'AbortError'});
+});
+test('public document receives canonical observed scene and introduction facts',async()=>{
+ const {calls}=await run();const common=calls.find(c=>c.phase==='common_document');assert.ok(common.prompt.includes('publicSceneFacts'));assert.ok(common.prompt.includes('registro sul tavolo'));assert.ok(common.prompt.includes('publicIntroductionFacts'));assert.ok(!common.prompt.includes('privateSecret'));
+});
+test('on a worker failure no new task is dequeued and the already active successful sibling is saved',async()=>{
+ let failure;
+ try{await run(8,async args=>{if(args.phase==='character_batch'&&args.data.selected[0].id==='c0')throw new Error('Provider failure');if(args.phase==='character_batch')await new Promise(resolve=>setTimeout(resolve,10));});}catch(error){failure=error;}
+ assert.ok(failure);assert.equal(failure.calls.filter(c=>c.phase==='character_batch').length,2);assert.equal(failure.calls.filter(c=>c.phase==='evidence_batch').length,0);assert.equal(failure.stages['characters:c2,c3'].validated,true);
+});
+test('a private canonical correction invalidates only dependent cards, preserving other rendered stages',async()=>{
+ const baseline=await run(8), stages=structuredClone(baseline.stages);
+ stages.canonical_plan.value.cast[0].knowledgeByRound=[];
+ const fixed=await run(8,args=>{if(args.phase==='field_repair')repairOriginal(args);},stages);
+ assert.deepEqual(fixed.story,baseline.story);
+ assert.equal(fixed.calls.filter(c=>c.phase==='common_document').length,0);assert.equal(fixed.calls.filter(c=>c.phase==='solution').length,0);assert.equal(fixed.calls.filter(c=>c.phase==='evidence_batch').length,0);
+ assert.deepEqual(fixed.calls.filter(c=>c.phase==='character_batch').map(c=>c.data.selected.map(p=>p.id)),[['c0','c1']]);
+});
+test('canonical repairs receive the established compact draft and exact cast and timeline',async()=>{
+ const fixed=await run(4,args=>{if(args.phase==='canonical_plan')args.result.timeline[2].time='19:00';if(args.phase==='field_repair')repairOriginal(args);});
+ const repair=fixed.calls.find(c=>c.phase==='field_repair');assert.ok(repair.prompt.includes('canonicalDraft'));assert.ok(repair.prompt.includes('Personaggio 1 Rossi'));assert.ok(repair.prompt.includes('20:30'));assert.ok(repair.prompt.includes('clue-1-1'));
+});
+test('a structural patch is accepted when it reveals an unchanged sibling semantic error',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='character_batch'&&args.data.selected[0].id==='c0'){delete args.result.characters[0].relationships;args.result.characters[0].round2Info='Breve';}if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.path),[['characters',0,'relationships'],['characters',0,'round2Info']]);
+});
+test('up to four invalid fields share a repair call; successful fields stay saved while only failed targets retry',async()=>{
+ let firstRepair=true;
+ const fixed=await run(4,args=>{
+  if(args.phase==='common_document'){args.result.introduction='Breve';args.result.crimeSceneMapDescription='Breve';}
+  if(args.phase==='field_repair'){
+   if(firstRepair){assert.equal(args.data.targets.length,2);firstRepair=false;args.result.value0=args.bible.commonDocument.introduction;args.result.value1='Ancora breve';}
+   else {assert.deepEqual(args.data.path,['crimeSceneMapDescription']);repairOriginal(args);}
   }
-});
-
-test('12-player generation keeps exact cast and uses small character batches', async () => {
-  const { story, calls } = await runGeneration(12);
-  assert.equal(story.characters.length, 12);
-  assert.equal(story.evidence.length, 36);
-  assert.equal(calls.filter((call) => call.schemaName === 'character_batch').length, 6);
-  assert.ok(story.characters.every((character) => character.opinionsOnOthers.length === 11));
-});
-
-test('8-player generation creates a complete cast for a different theme', async () => {
-  const { story, calls } = await runGeneration(8, { theme: 'Notte al museo' });
-  assert.equal(story.characters.length, 8);
-  assert.equal(story.evidence.length, 24);
-  assert.ok(story.characters.every((character) => character.opinionsOnOthers.length === 7));
-  assert.ok(calls.find((call) => call.schemaName === 'story_bible').prompt.includes('Notte al museo'));
-});
-
-test('canonical bible defines an ordered timeline and round cards require actionable labeled sections', async () => {
-  const { calls } = await runGeneration(4);
-  const bibleCall = calls.find((call) => call.schemaName === 'story_bible');
-  assert.ok(bibleCall.schema.required.includes('timeline'));
-  assert.equal(bibleCall.schema.properties.timeline.items.properties.time.type, 'string');
-  const characterPrompt = calls.find((call) => call.schemaName === 'character_batch').prompt;
-  for (const label of ['Fatti che conosci:', 'Cosa puoi rivelare:', 'Obiettivo concreto:', 'Informazione nuova:']) {
-    assert.ok(characterPrompt.includes(label), `Il prompt deve richiedere la sezione ${label}`);
-  }
-});
-
-test('a short common dossier is rejected before character generation', async () => {
-  await assert.rejects(() => runGeneration(4, { shortCommonDocument: true }), /introduzione.*almeno 200 parole/i);
-});
-
-test('an unordered canonical timeline is rejected before character generation', async () => {
-  await assert.rejects(() => runGeneration(4, { invalidTimeline: true }), /cronologia.*orari HH:MM validi e in ordine crescente/i);
-});
-
-test('a transient structured-output failure is retried without losing the story', async () => {
-  const { story, calls } = await runGeneration(4, { firstCallStructuredFailure: true });
-  assert.equal(story.characters.length, 4);
-  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 2);
-});
-
-test('a character batch that fails completeness checks is regenerated with a focused correction', async () => {
-  const { story, calls } = await runGeneration(4, { firstCharacterBatchIncomplete: true });
-  const characterCalls = calls.filter((call) => call.schemaName === 'character_batch');
-  assert.equal(story.characters.length, 4);
-  assert.equal(characterCalls.length, 3);
-  assert.match(characterCalls[1].prompt, /La scheda di .* è troppo breve in initialDescription/);
-});
-
-test('a long provider quota window is shown immediately without retrying the expensive request', async () => {
-  await assert.rejects(
-    () => runGeneration(4, { firstCallLongRateLimit: true }),
-    /Attendi circa 4 minuti e 48 secondi/
-  );
-});
-
- test('five-player Victorian villa repairs a short introduction without regenerating canonical facts', async () => {
-  const { story, calls } = await runGeneration(5, { theme: 'Mistero a Villa Vittoriana', shortCommonDocument: true, repairShortDocument: true });
-  assert.equal(story.characters.length, 5);
-  assert.equal(story.evidence.length, 15);
-  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
-  assert.equal(calls.filter((call) => call.schemaName === 'bible_text_repair').length, 1);
-  assert.equal(story.commonDocument.introduction, makeBible(5).commonDocument.introduction);
-  assert.deepEqual(story.solution, makeBible(5).solution);
-  assert.match(calls.find((call) => call.schemaName === 'bible_text_repair').prompt, /200/);
-});
-
- test('text repair retries invalid replacements and never alters already valid evidence', async () => {
-  const { story, calls } = await runGeneration(5, { shortCommonDocument: true, repairShortDocument: true, firstRepairInvalid: true });
-  assert.equal(calls.filter((call) => call.schemaName === 'bible_text_repair').length, 2);
-  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
-  assert.equal(story.evidence[0].content, makeBible(5).characterPlans[0].cluePlan[0].content);
  });
-
- test('short clue prose is repaired for 4, 8 and 12 guests without replacing clue IDs or recipients', async () => {
-  for (const count of [4, 8, 12]) {
-    const { story, calls } = await runGeneration(count, { shortClue: true, repairShortDocument: true });
-    assert.equal(story.evidence.length, count * 3);
-    assert.equal(story.evidence[3].id, 'clue-1-1');
-    assert.deepEqual(story.evidence[3].recipients, ['Personaggio 2 Rossi']);
-    assert.equal(story.evidence[3].content, makeBible(count).characterPlans[1].cluePlan[0].content);
-    assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
+ assert.equal(fixed.calls.filter(c=>c.phase==='field_repair').length,2);
+ assert.ok(fixed.saves.some(s=>s.k==='common_document'&&!s.validated&&s.value.introduction===fixed.bible.commonDocument.introduction&&s.value.crimeSceneMapDescription==='Breve'));
+});
+test('one short public profile repairs only its description while all sibling profiles are byte identical',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='common_document'){const entries=args.result.characterOverviews.split('\n\n');entries[1]='Personaggio 2 Rossi breve';args.result.characterOverviews=entries.join('\n\n');}if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.path),[['publicProfiles',1,'description']]);
+});
+test('one missing public profile requests only that profile and preserves the supplied profiles',async()=>{
+ const baseline=await run();
+ const fixed=await run(4,args=>{if(args.phase==='common_document'){const entries=args.result.characterOverviews.split('\n\n');entries.splice(1,1);args.result.characterOverviews=entries.join('\n\n');}if(args.phase==='field_repair')repairOriginal(args);});
+ assert.deepEqual(fixed.story,baseline.story);assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.code),['missing_public_profile']);
+});
+test('missing appends to the same array are sequential when the first replacement is rejected',async()=>{
+ let rejected=false;
+ const baseline=await run();
+ const fixed=await run(4,args=>{
+  if(args.phase==='character_batch'&&args.data.selected[0].id==='c0')args.result.characters[0].opinionsOnOthers.splice(1);
+  if(args.phase==='field_repair'){
+   assert.ok(!args.data.targets,'same-array missing units must not be batched');
+   if(!rejected){rejected=true;args.result.value={characterName:'Wrong identity',opinion:'Breve'};}else repairOriginal(args);
   }
  });
-
-test('a 64-second quota cooldown is awaited automatically without restarting generation', async () => {
-  const originalTimeout = globalThis.setTimeout;
-  const waits = [];
-  globalThis.setTimeout = (callback, delay, ...args) => { waits.push(delay); return originalTimeout(callback, 0, ...args); };
-  try {
-    const { story } = await runGeneration(5, { firstCallRateLimited: true, retrySeconds: 64 });
-    assert.equal(story.characters.length, 5);
-    assert.ok(waits.includes(64000));
-  } finally { globalThis.setTimeout = originalTimeout; }
+ assert.deepEqual(fixed.story,baseline.story);
+ assert.deepEqual(fixed.calls.filter(c=>c.phase==='field_repair').map(c=>c.data.path),[['characters',0,'opinionsOnOthers',1],['characters',0,'opinionsOnOthers',1],['characters',0,'opinionsOnOthers',2]]);
+ for(const saved of fixed.saves.filter(s=>s.k==='characters:c0,c1'))assert.ok(JSON.parse(JSON.stringify(saved.value)).characters.every(c=>c&&c.opinionsOnOthers.every(Boolean)));
 });
-
-test('canonical timeline may include the non-playing victim without inventing a participant', async () => {
-  const { story } = await runGeneration(5, { victimInTimeline: true });
-  assert.equal(story.characters.length, 5);
-  assert.ok(!story.characters.some((character) => character.name === 'Alberto Neri'));
+test('JSON-roundtrip resume preserves accepted identities and repairs missing slots without collection regeneration',async()=>{
+ const baseline=await run(), stages=JSON.parse(JSON.stringify(baseline.stages));
+ stages['characters:c0,c1'].validated=false;
+ stages['characters:c0,c1'].value.characters[0].opinionsOnOthers=[stages['characters:c0,c1'].value.characters[0].opinionsOnOthers[0],null];
+ stages['characters:c0,c1'].value.characters=[null,stages['characters:c0,c1'].value.characters[0],stages['characters:c0,c1'].value.characters[1]];
+ stages.common_document.validated=false;stages.common_document.value.publicProfiles[1]=null;
+ const evidenceKey=Object.keys(stages).find(k=>k.startsWith('evidence:'));stages[evidenceKey].validated=false;stages[evidenceKey].value.evidence[1]=null;
+ const fixed=await run(4,args=>{if(args.phase==='field_repair')repairOriginal(args);},stages);
+ assert.deepEqual(fixed.story,baseline.story);
+ assert.equal(fixed.calls.filter(c=>['canonical_plan','common_document','character_batch','evidence_batch'].includes(c.phase)).length,0);
+ assert.ok(fixed.calls.filter(c=>c.phase==='field_repair').every(c=>!c.data.targets||c.data.targets.every(t=>t.path.length>1)));
 });
-test('short canonical relationships are expanded without changing their targets', async () => {
-  const { story, calls } = await runGeneration(5, { shortRelationship: true, repairShortDocument: true });
-  assert.equal(story.characters.length, 5);
-  assert.equal(calls.filter((call) => call.schemaName === 'story_bible').length, 1);
-  assert.ok(calls.some((call) => call.schemaName === 'bible_text_repair'));
+test('array structural validation detects sparse holes as missing values',async()=>{
+ const bundled=await build({entryPoints:['services/fieldRepair.ts'],bundle:true,write:false,platform:'browser',format:'esm'});
+ const fields=await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+ const values=Array(2);values[1]='preserved';
+ const errors=fields.structure(values,fields.arraySchema(fields.stringSchema));
+ assert.deepEqual(errors.map(e=>e.path),[[0]]);
 });

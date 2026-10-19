@@ -61,6 +61,7 @@ const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
         body: JSON.stringify({
           prompt,
           model: 'openai/gpt-oss-20b',
+          phase: 'themes',
           temperature: 0.9,
           top_p: 0.9,
           response_format: { type: 'json_object' },
@@ -75,6 +76,7 @@ const SetupForm: React.FC<SetupFormProps> = ({ onGenerate }) => {
           body: JSON.stringify({
             prompt,
             model: 'openai/gpt-oss-20b',
+            phase: 'themes',
             temperature: 0.7,
             response_format: { type: 'json_object' },
           }),

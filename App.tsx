@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import type { GenerationCheckpoint, GenerationProgress } from './services/generationTypes';
+import { loadGeneration, saveGeneration, deleteGeneration } from './services/generationStorage';
 import type { StoryData } from './types';
 import { generateMurderMysteryStory } from './services/adapter';
 import SetupForm from './components/SetupForm';
@@ -82,42 +84,77 @@ const generatorTips = [
 ];
 
 const App: React.FC = () => {
-  const [story, setStory] = useState<StoryData | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [restored] = useState(() => loadGeneration());
+  const [checkpoint, setCheckpoint] = useState<GenerationCheckpoint | undefined>(restored.checkpoint);
+  const [warning, setWarning] = useState<string | undefined>(restored.warning);
+  const [story, setStory] = useState<StoryData | null>(restored.checkpoint?.status === 'complete' ? restored.checkpoint.finalStory! : null);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<GenerationProgress>();
+  const [now, setNow] = useState(Date.now());
+  const running = useRef(false);
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => { clearInterval(timer); controller.current?.abort(); }; }, []);
 
-  const handleGenerateStory = async (playerCount: number, theme: string) => {
-    setIsLoading(true);
-    setError(null);
-    setStory(null);
+  const handleGenerateStory = async (playerCount: number, theme: string, resume?: GenerationCheckpoint) => {
+    if (running.current) return;
+    running.current = true;
+    setIsLoading(true); setError(null); setStory(null);
+    const abort = new AbortController(); controller.current = abort;
+    const execute = async () => {
+      const generatedStory = await generateMurderMysteryStory(playerCount, theme, {
+        checkpoint: resume, signal: abort.signal, onProgress: setProgress,
+        onCheckpoint: value => { setCheckpoint(value); const issue = saveGeneration(value); if (issue) setWarning(issue); },
+      });
+      if (!abort.signal.aborted) setStory(generatedStory);
+    };
+    let leaseTimer: ReturnType<typeof setInterval> | undefined;
+    const leaseKey = 'murder-mystery:generation:lease';
+    const owner = globalThis.crypto?.randomUUID?.() ?? String(Math.random());
+    let ownedLease = false;
     try {
-      const generatedStory = await generateMurderMysteryStory(playerCount, theme);
-
-      if (!generatedStory || !generatedStory.commonDocument || !generatedStory.characters || !generatedStory.solution) {
-        throw new Error('La storia generata non è valida o è incompleta. Riprova.');
+      const locks = (navigator as any).locks;
+      if (locks) {
+        await locks.request('murder-mystery:generation', { ifAvailable: true }, async (lock: unknown) => {
+          if (!lock) throw new Error('Una generazione è già attiva in un’altra scheda.');
+          await execute();
+        });
+      } else {
+        try {
+          const old = JSON.parse(localStorage.getItem(leaseKey) || 'null');
+          if (old?.expires > Date.now()) throw new Error('Una generazione è già attiva in un’altra scheda.');
+          localStorage.setItem(leaseKey, JSON.stringify({ owner, expires: Date.now() + 15000 }));
+          ownedLease = true;
+          // Allow competing tabs to observe the lease before beginning any request.
+          await new Promise(resolve => setTimeout(resolve, 100));
+          if (JSON.parse(localStorage.getItem(leaseKey) || 'null')?.owner !== owner) throw new Error('Una generazione è già attiva in un’altra scheda.');
+          leaseTimer = setInterval(() => {
+            try {
+              if (JSON.parse(localStorage.getItem(leaseKey) || 'null')?.owner !== owner) { abort.abort(); return; }
+              localStorage.setItem(leaseKey, JSON.stringify({ owner, expires: Date.now() + 15000 }));
+            } catch { abort.abort(); }
+          }, 4000);
+        } catch (issue) {
+          if (issue instanceof Error && issue.message.includes('altra scheda')) throw issue;
+          setWarning('Salvataggio locale non disponibile: i progressi restano in questa pagina. La protezione dalle generazioni duplicate è limitata a questa scheda.');
+        }
+        await execute();
       }
-
-      if (generatedStory.characters.length !== playerCount) {
-        throw new Error(`Sono stati generati ${generatedStory.characters.length} personaggi, ma ne erano richiesti ${playerCount}. Riprova.`);
-      }
-
-      setStory(generatedStory);
     } catch (err: any) {
-      setError(
-        err.message ||
-          'Si è verificato un errore durante la generazione della storia. Potrebbe essere un problema con la chiave API o una risposta inattesa dal modello. Riprova.'
-      );
-      console.error('Story generation error:', err);
+      if (!abort.signal.aborted) setError(err.message || 'Generazione interrotta. Puoi riprendere i progressi salvati.');
     } finally {
-      setIsLoading(false);
+      if (leaseTimer) clearInterval(leaseTimer);
+      if (ownedLease) { try { if (JSON.parse(localStorage.getItem(leaseKey) || 'null')?.owner === owner) localStorage.removeItem(leaseKey); } catch {} }
+      running.current = false; controller.current = null; setIsLoading(false);
     }
   };
 
   const handleReset = () => {
-    setStory(null);
-    setError(null);
-    setIsLoading(false);
+    if (running.current) return;
+    const issue = deleteGeneration(); setWarning(issue); setCheckpoint(undefined);
+    setStory(null); setError(null); setProgress(undefined);
   };
+  const retrySeconds = Math.max(0, Math.ceil(((checkpoint?.retryAt ?? 0) - now) / 1000));
 
   return (
     <div className="min-h-screen w-full bg-slate-950 text-slate-100 relative overflow-hidden">
@@ -207,7 +244,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {!story && !isLoading && (
+              {!story && !isLoading && !checkpoint && (
                 <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(240px,0.85fr)]">
                   <div className="order-1">
                     <SetupForm onGenerate={handleGenerateStory} />
@@ -234,7 +271,14 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {isLoading && <LoadingSpinner />}
+              {warning && <div role="status" className="rounded-lg border border-amber-400 p-4">{warning}<button className="ml-4 underline" onClick={handleReset} disabled={isLoading}>Nuova storia / elimina salvataggio</button></div>}
+              {checkpoint && !story && !isLoading && <div className="space-y-3 rounded-lg border border-amber-400/40 p-4" role="status">
+                <p>Storia salvata: {checkpoint.input.theme} · {checkpoint.input.playerCount} partecipanti</p>
+                {retrySeconds > 0 && <p>Ripresa disponibile tra {retrySeconds} secondi.</p>}
+                <button className="rounded bg-amber-500 px-4 py-2 text-slate-950 disabled:opacity-40" disabled={retrySeconds > 0} onClick={() => handleGenerateStory(checkpoint.input.playerCount, checkpoint.input.theme, checkpoint)}>Riprendi</button>
+                <button className="ml-4 underline" onClick={handleReset}>Elimina / nuova storia</button>
+              </div>}
+              {isLoading && <><LoadingSpinner progress={progress} /><button className="underline" onClick={() => controller.current?.abort()}>Annulla e conserva i progressi</button></>}
 
               {error && (
                 <div className="text-center space-y-4" role="alert" aria-live="assertive">
