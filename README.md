@@ -1,20 +1,49 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Murder Mystery Dinner Generator
 
-# Run and deploy your AI Studio app
+A free web application designed to make creating murder mystery dinner experiences simple and accessible.
 
-This contains everything you need to run your app locally.
+**Live Website:** https://generatoredicenecondelitto.vercel.app/
 
-View your app in AI Studio: https://ai.studio/apps/drive/1UNgKUeTT_2KpX7fDOyBXtfzYzxkcR580
+## About the Project
 
-## Run Locally
+Murder Mystery Dinner Generator was developed to help users create engaging murder mystery dinner experiences without the need for expensive tools or services.
 
-**Prerequisites:**  Node.js
+The project focuses on accessibility, simplicity, and creativity, making it easier to organize an interactive mystery experience.
 
+## Features
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- Simple and intuitive interface
+- Murder mystery dinner generation
+- Accessible directly through a web browser
+- No installation required
+- Completely free to use
+
+## Getting Started
+
+You can access the application directly at:
+
+https://generatoredicenecondelitto.vercel.app/
+
+No installation or technical knowledge is required.
+
+## Development
+
+This project started with a simple idea: creating a completely free tool that anyone could use to organize a murder mystery dinner.
+
+One of the main goals was to avoid relying on paid AI models, premium APIs, or subscription-based services. I wanted to explore how far I could take the project while keeping development and usage costs as low as possible.
+
+The result is an application built around accessibility and practicality, proving that creating something useful doesn't necessarily require expensive AI services or paid infrastructure.
+
+Keeping the tool free and accessible has been a priority from the beginning and remains an important part of the project's philosophy.
+
+## Contributing
+
+Suggestions, feedback, and contributions are welcome. If you have ideas for improvements or encounter any issues, feel free to open an issue or submit a pull request.
+
+## License
+
+No license has been specified for this project.
+
+## Website
+
+https://generatoredicenecondelitto.vercel.app/
