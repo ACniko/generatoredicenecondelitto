@@ -54,5 +54,3 @@ export const verificationSchema = {
   },
   required: ['approved', 'summary', 'issues', 'warnings'],
 };
-
-
