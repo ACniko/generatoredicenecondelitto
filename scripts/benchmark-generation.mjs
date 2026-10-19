@@ -67,9 +67,13 @@ for (const [index, playerCount] of counts.entries()) {
   } catch (error) { result.error = error instanceof Error ? error.message : 'Unknown error'; }
   finally { clearTimeout(timeout); globalThis.fetch = nativeFetch; }
   result.elapsedMs = Math.round(performance.now() - started);
+  const measured = !baseline && checkpoint?.metrics ? checkpoint.metrics : requests.map((request) => request.metadata ?? {});
+  result.measurementRequests = measured.length;
   for (const key of ['promptTokens', 'completionTokens', 'totalTokens', 'cachedTokens', 'reasoningTokens']) {
-    const known = requests.map((request) => request.metadata?.[key]).filter((value) => typeof value === 'number');
-    result[key] = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
+    const known = measured.map((metric) => metric[key]).filter((value) => typeof value === 'number');
+    const knownSum = known.length ? known.reduce((sum, value) => sum + value, 0) : null;
+    result[key] = known.length === measured.length ? knownSum : null;
+    result[`${key}KnownSum`] = knownSum;
     result[`${key}KnownRequests`] = known.length;
   }
   report.cases.push(result);
