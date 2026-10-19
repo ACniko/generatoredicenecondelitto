@@ -1,35 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { HourGlassIcon } from './icons';
-
-const messages = [
-  'Coordinando gli indizi...',
-  'Controllando la coerenza della trama...',
-  'Preparando i personaggi segreti...',
-  'Rifinendo il colpo di scena finale...',
-  'Allineando le timeline degli eventi...',
-  'Revisionando gli alibi dei sospettati...',
-  'Bilanciando difficoltà e suspense...',
-  'Verificando che tutto rispetti le linee guida...'
-];
-
-const LoadingSpinner: React.FC = () => {
-  const [messageIndex, setMessageIndex] = useState(0);
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setMessageIndex((prevIndex) => (prevIndex + 1) % messages.length);
-    }, 3200);
-
-    return () => clearInterval(intervalId);
-  }, []);
-
-  return (
-    <div className="flex flex-col items-center justify-center p-8 space-y-4" role="status" aria-live="polite">
-      <HourGlassIcon className="w-16 h-16 text-amber-400 animate-spin" style={{ animationDuration: '3s' }} />
-      <h2 className="text-2xl font-bold text-amber-300">Generazione in corso...</h2>
-      <p className="text-gray-400 text-lg transition-opacity duration-500">{messages[messageIndex]}</p>
-    </div>
-  );
+import type { GenerationProgress } from '../services/generationTypes';
+const LoadingSpinner: React.FC<{ progress?: GenerationProgress }> = ({ progress }) => {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  const seconds = Math.max(0, Math.ceil(((progress?.retryAt ?? 0) - now) / 1000));
+  return <div className="flex flex-col items-center justify-center p-8 space-y-4" role="status" aria-live="polite">
+    <HourGlassIcon className="w-16 h-16 text-amber-400 animate-spin" />
+    <h2 className="text-2xl font-bold text-amber-300">{progress?.status === 'waiting' ? 'Attesa del servizio AI' : 'Generazione in corso'}</h2>
+    <p>{progress?.message ?? 'Preparazione della storia...'}</p>
+    {progress && <p>Personaggi completati: {progress.completedCharacters} / {progress.totalCharacters}</p>}
+    {seconds > 0 && <p>Nuovo tentativo tra {seconds} secondi</p>}
+  </div>;
 };
-
 export default LoadingSpinner;
